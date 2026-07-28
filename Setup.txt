@@ -1,0 +1,166 @@
+Step 1: Create the Isolated Sandbox Environment
+Open your standard Command Prompt (cmd) and execute these commands to build your new workspace:
+
+:: 1. Create a new master project directory
+mkdir C:\enterprise-integration-project
+
+:: 2. Step inside the master directory
+cd C:\enterprise-integration-project
+
+:: 3. Create the sub-folder for your Python integration service
+mkdir 02-python-transformation-api
+
+:: 4. Navigate to the master project directory
+cd C:\enterprise-integration-project
+
+:: 5. Instruct Python 3.13 to spin up an isolated virtual sandbox inside the Python module
+python -m venv C:\enterprise-integration-project\02-python-transformation-api\.venv
+
+:: 6. Activate the sandbox environment engine
+C:\enterprise-integration-project\02-python-transformation-api\.venv\Scripts\activate
+or
+C:\enterprise-integration-project\02-python-transformation-api\.venv\Scripts\activate.ps1 if inside a VS Code Powershell
+
+Verification: Your command line prompt will now prominently display (.venv) at the beginning, confirming you are locked inside the safe sandbox.
+
+Step 2: Establish the Dependency Manifest File (requirements.txt)
+Before setting up the environment, we create our configuration manifest file.
+Open your text editor or VS Code to your new folder: C:\enterprise-integration-project\02-python-transformation-api.
+
+Create a file named exactly requirements.txt. Paste your explicit dependency pins inside it:
+
+fastapi==0.115.6
+pydantic==2.10.4
+uvicorn[standard]==0.34.0
+
+
+Step 3: Execute Batch Installation and Environment Audit
+With your virtual environment active, run the internal installation manager to pull the specified versions down into your local project bubble:
+
+:: 1. Run the batch manifest installer
+pip install -r C:\enterprise-integration-project\02-python-transformation-api\requirements.txt
+
+:: 2. Verify and audit the complete environment footprint
+pip freeze
+
+
+Step 4: Initialize the Local Git Ledger and Filter Runtime Files
+Now we initialize Git tracking. We must explicitly instruct Git to ignore the massive .venv package directory. We do this by creating a .gitignore configuration file.
+
+:: 1. Initialize the local version tracking ledger inside the master root
+git init
+
+:: 2. Create the environment filter file to block background runtime packages
+echo .venv/ > C:\enterprise-integration-project\02-python-transformation-api\.gitignore
+
+
+Step 5: Establish the Cloud-Hosted Linkage Pipeline
+We now tether your localized version ledger directly to your GitHub profile, matching the exact namespace of your project folder. Navigate to your browser and create a clean repository at github.com named precisely: enterprise-integration-project (leaving all checkboxes unchecked) with Public access. Execute the linking commands in your terminal to hook your laptop git ledger to the cloud endpoint:
+
+:: 1. Map your local repository ledger to its official home on GitHub
+git remote add origin https://github.com/nikmar0808/enterprise-integration-project.git
+
+:: 2. Standardize your core development timeline branch name to 'main'
+git branch -M main
+
+Step 6: Execute the Initial Transactional Commit and Upstream PushWith the connection verified, run the professional deployment loop to archive your infrastructure configuration files and upload them to GitHub for the first time.
+
+:: 1. Stage all tracked configuration elements into the loading area
+git add .
+
+:: 2. Create an immutable version entry with a descriptive transaction message
+git commit -m "infrastructure: initial project structural setup and dependency manifest"
+
+:: 3. Upload the tracked elements securely from your computer to GitHub
+git push -u origin main
+
+
+Step 7: Create package structure for codebase
+
+:: 1. Create folders under \02-python-transformation-api
+mkdir app
+mkdir app\schemas
+mkdir app\api
+
+
+:: 2. Create the Package Markers (__init__.py)
+In Python, an empty file named __init__.py tells the Python runtime engine that a folder is an importable package module, not just a plain directory.
+Create an empty file named __init__.py inside each of these three folders:
+app\__init__.py
+app\schemas\__init__.py
+app\api\__init__.py
+
+:: 3. Explode the Code into Clean Enterprise LayersWe will now divide the monolith main.py into distinct components. Use VS Code to create the following files and paste their respective codes.
+
+Layer 1: The Contract Layer (app/schemas/meter.py)This file houses your strict data integration boundaries. It contains no runtime routing or business logic.
+
+Layer 2: The Routing & Controller Layer (app/api/transform.py)This file handles HTTP routing, payload ingestion, and executes the isolated business mapping transformation logic.
+
+Layer 3: The Application Bootstrap Entrypoint (app/main.py)This is your lightweight microservice container root. Its only job is to initialize the FastAPI core engine, mount your decoupled network routers, and handle base health checks.
+
+:: 4. Launch server
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+Should see:
+INFO:     Started reloader process [31504] using WatchFiles
+INFO:     Started server process [40516]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+
+:: 5. Test
+
+Step 1: Expand the Ingestion PortOn the webpage, locate the green row labeled POST /api/v1/transform.Click anywhere on that row to expand it.On the right side, click the "Try it out" button.This unlocks the input panel and gives you a pre-formatted JSON text block that matches your SmartMeterPayload data contract.
+
+Step 2: Test 1 – Executing a Valid RunLet’s pass a perfectly clean utility transmission stream to see how the system handles healthy data.Replace the text in the Request body text area with this clean JSON block:
+
+{
+  "meter_id": "MTR-2026-99A",
+  "grid_zone": "NORTH-UTILITY-GRID",
+  "readings": [
+    {
+      "timestamp": "2026-07-28T09:00:00Z",
+      "kwh_value": 12.45,
+      "voltage": 230.5
+    },
+    {
+      "timestamp": "2026-07-28T09:15:00Z",
+      "kwh_value": 14.20,
+      "voltage": 228.1
+    }
+  ]
+}
+
+Scroll down slightly and click the big blue "Execute" button.
+
+The Result:
+Scroll down to the Server response area. You will see a 200 success code and a clean JSON object showing the computed analytics summary (cumulative_kwh: 26.65), proving that your core mapping and transformation logic worked seamlessly.
+
+Step 3: Test 2 – Simulating an Enterprise Failure (The Constraint Check)
+Now, let's intentionally simulate a malicious or broken payload common in legacy grid systems to see how Pydantic protects your system boundaries.
+
+Modify the text inside the input box to break three strict constraints:
+1. Make the meter_id only 2 characters long ("M1") (Violates: min_length=5).
+2. Make a kwh_value negative (-5.5) (Violates: gt=0.0).
+3. Make a voltage value too low (80.0) (Violates: ge=100.0).
+
+Your broken payload text should look like this:
+
+{
+  "meter_id": "M1",
+  "grid_zone": "NORTH-UTILITY-GRID",
+  "readings": [
+    {
+      "timestamp": "2026-07-28T09:00:00Z",
+      "kwh_value": -5.5,
+      "voltage": 80.0
+    }
+  ]
+}
+
+Click the blue "Execute" button again.
+
+The Result:
+The server will reject the request instantly with a 422 Unprocessable Entity response. If you look at the response body, Python prints a highly detailed schema error report telling you exactly which field failed, what the input was, and what rule it violated (e.g., String should have at least 5 characters, Input should be greater than 0).
+
+Notice that you did not write a single conditional if/else block or loop inside your code to catch those errors. The framework intercepts the bad transmission at the network interface boundary and handles the validation automatically.
+
