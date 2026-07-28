@@ -1,5 +1,15 @@
-from fastapi import APIRouter, HTTPException, status
+import logging
+from fastapi import APIRouter, HTTPException, Security, status
+from fastapi.security.api_key import APIKeyHeader
 from app.schemas.meter import SmartMeterPayload
+from app.config import settings
+
+# Configure structured logging for the API module
+logger = logging.getLogger(__name__)
+
+# Declare the specific header key name the system will look for in network packets
+API_KEY_NAME = "X-Utility-Grid-Token"
+api_key_header_guard = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 # FastAPI is built natively on top of the OpenAPI Specification (formerly known as Swagger). 
 # Because we explicitly declared our data contracts using Pydantic and type hints, 
@@ -13,6 +23,26 @@ from app.schemas.meter import SmartMeterPayload
 # This is how professional developers version their APIs so they don't break older client integrations when upgrading software.
 router = APIRouter(prefix="/api/v1", tags=["Ingestion & Transformation"])
 
+# -------------------------------------------------------------------------
+# SECURITY INTERCEPTOR FUNCTION
+# -------------------------------------------------------------------------
+def authenticate_request(api_key: str = Security(api_key_header_guard)):
+    """
+    Validates inbound network header keys against our centralized secure token contract.
+    """
+    if api_key == settings.API_SECURITY_TOKEN:
+        return api_key
+        
+    logger.warning("Security Breach Attempt: Unauthorized connection dropped due to missing or invalid token credentials.")
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Access Denied: Invalid Security Credentials."
+    )
+
+# -------------------------------------------------------------------------
+# SECURED INGESTION ROUTE
+# -------------------------------------------------------------------------
+
 #The @ symbol is called a Decorator. Think of it as wrapping a specific function with extra powers. 
 # Here, it tells FastAPI: "Listen for incoming HTTP POST requests hitting the /transform path, and 
 # route that network traffic directly into the function below."
@@ -25,20 +55,20 @@ router = APIRouter(prefix="/api/v1", tags=["Ingestion & Transformation"])
 #    (like checking if types match and numbers are positive).
 # 3. If valid, it hands your function a clean, fully populated Python object ready for use. 
 #    If invalid, it completely drops the connection and generates that detailed error report you saw in Swagger.
-async def validate_and_transform_payload(payload: SmartMeterPayload):
+async def validate_and_transform_payload(
+    payload: SmartMeterPayload,
+    _auth: str = Security(authenticate_request) # Injects the security check directly into this gate
+):
     """
-    Ingests raw smart-meter streams, enforces validation schemas, and processes data frames.
+    Ingests smart-meter streams, enforces schema structures, and processes data frames.
+    (Protected behind X-Utility-Grid-Token authentication).
     """
     try:
-        # Calculate some simple analytics on the validated payload
-        # This is a highly optimized Python concept called a List Comprehension wrapped inside a sum() function. 
-        # It loops through the array of meter readings, extracts just the numerical kwh_value from each record, and 
-        # aggregates them into a single total.
         total_consumption = sum(reading.kwh_value for reading in payload.readings)
         total_records = len(payload.readings)
         
         return {
-            "message": "Payload schema validated successfully",
+            "message": "Payload schema validated and authorized successfully",
             "metadata": {
                 "processed_asset": payload.meter_id,
                 "regional_zone": payload.grid_zone,
