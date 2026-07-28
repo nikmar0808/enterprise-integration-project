@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from app.api.transform import router as transform_router
 
 app = FastAPI(
-    title="Energy Utility Transformation API",
+    title="Smart Meter Data Transformation API",
     description="High-speed ingestion and validation engine for grid smart-meter telemetry.",
     version="1.0.0"
 )

@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
+# By inheriting from Pydantic's BaseModel, you are telling Python: "This isn't just a regular class. This is a strict enterprise data contract."
 class MeterReading(BaseModel):
     """
     Validates individual smart-meter telemetry metrics intervals.

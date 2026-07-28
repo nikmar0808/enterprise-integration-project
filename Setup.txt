@@ -107,7 +107,7 @@ INFO:     Started server process [40516]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 
-:: 5. Test
+:: 5. Test the setup
 
 Step 1: Expand the Ingestion PortOn the webpage, locate the green row labeled POST /api/v1/transform.Click anywhere on that row to expand it.On the right side, click the "Try it out" button.This unlocks the input panel and gives you a pre-formatted JSON text block that matches your SmartMeterPayload data contract.
 
@@ -163,4 +163,23 @@ The Result:
 The server will reject the request instantly with a 422 Unprocessable Entity response. If you look at the response body, Python prints a highly detailed schema error report telling you exactly which field failed, what the input was, and what rule it violated (e.g., String should have at least 5 characters, Input should be greater than 0).
 
 Notice that you did not write a single conditional if/else block or loop inside your code to catch those errors. The framework intercepts the bad transmission at the network interface boundary and handles the validation automatically.
+
+
+:: 6. Save locally and Execute Git Commit Tracking
+
+Save the log text above as session_log.md inside your root C:\enterprise-integration-project\ directory. Now, let's snapshot this entire modular application package locally and push it cleanly to your cloud repository.
+
+Open your VS Code terminal, keep the application running, or open a second terminal tab, and run these precise commands:
+
+# 1. Ensure you are at the master root workspace directory
+cd C:\enterprise-integration-project
+
+# 2. Stage all modifications (the new app package folder and session log changes)
+git add .
+
+# 3. Create a descriptive transactional commit message
+git commit -m "feat(python-api): implement layered package architecture for smart-meter validation"
+
+# 4. Upload your new clean enterprise project code layers to GitHub
+git push origin main
 
