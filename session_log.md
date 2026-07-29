@@ -1,4 +1,4 @@
-### Session Log: Enterprise Integration Modernisation Strategy
+# Session Log: Enterprise Integration Modernisation Strategy
 
 ### 1. Candidate Architectural Context & Target Market
 

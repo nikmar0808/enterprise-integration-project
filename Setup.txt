@@ -362,6 +362,14 @@ docker compose logs python-validator
 docker compose restart python-validator
 docker compose stop python-validator
 
+Step 13: GitHub commit
+
+Under C:\enterprise-integration-project:
+git add .  --> stage all changes tracked since last commit
+git status --> List of files staged, can restore to rollback staged files
+git commit -m "feat: complete end-to-end integration, Java Ingestion, Python Transformation and PostgreSQL persistence" --> Commit to local git
+git push origin develop  --> Push locally commited changes to active develop/staging branch on GitHub: Use -u flag for the first push to GitHub for this branch
+
 
 
 
