@@ -77,7 +77,7 @@ git commit -m "infrastructure: initial project structural setup and dependency m
 git push -u origin main
 
 
-Step 7: Create package structure for codebase
+Step 7: Create package structure for codebase and various code files
 
 :: 1. Create folders under \02-python-transformation-api
 mkdir app
@@ -229,5 +229,148 @@ mkdir tests
 Under tests create test_integration.py
 
 run pytest
+
+:: 9. Commit changes and push to develop branch in GitHub
+
+Stage all newly developed files
+git add .
+
+Create a clean transactional commit ledger message using Conventional Commits format
+git commit -m "feat(python-api): complete production hardening with centralized configuration, token auth, and unit tests"
+
+Push to develop branch/timeline
+git push origin develop
+
+
+Step 8. Create Java Environment
+
+winget install Microsoft.OpenJDK.21
+mkdir C:\enterprise-integration-project\01-java-ingestion-service
+Under this, create file pom.xml
+
+
+Step 9. Deploying Maven (The Build Coordinator)
+
+Download and Extract Maven
+Open your web browser and click this direct link to download the official stable binary distribution zip archive:👉 apache-maven-3.9.9-bin.zip
+Open the downloaded .zip file on your computer.
+Extract (or drag) the inner folder apache-maven-3.9.9 directly onto the root of your C:\ drive.
+Rename that folder to simply Maven so its location path is precisely:👉 C:\Maven (Inside this folder, you should instantly see a bin directory containing mvn.cmd)
+
+Inject the Execution Path into Windows PowerShell
+Instead of navigating through hidden Windows Control Panel menus to modify environment variables, we will use your active PowerShell line to permanently inject the new Maven execution path into your machine's registry ledger.
+
+Open your VS Code terminal and execute this exact path command:
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\Maven\bin", "User")
+
+
+Cycle and Verify the Workspace
+Close your active terminal pane inside VS Code entirely by clicking the Trash Can icon on the terminal panel toolbar.
+Open a fresh terminal line by pressing Ctrl + Shift +  ` (or click Terminal > New Terminal).
+Type the official verification command to confirm the pipeline connectivity:
+mvn -v
+
+Step 10: Create package structure for codebase and various code files
+Ensure pom.xml have contents
+
+mkdir C:\enterprise-integration-project\01-java-ingestion-service\src\main\java\com\utility\ingest
+
+create a file named exactly IngestionApplication.java inside that deepest folder level (...\com\utility\ingest\) and paste this standard bootstrap engine code
+
+Triggering Your First Downstream Build Compilation
+Now, let's let Maven coordinate your dependencies. We will run a clean compilation loop. This will tell Maven to read your pom.xml, connect to the central repository, download Spring Boot 3.2.2, and verify that your source code compiles perfectly without syntax errors.
+
+Run this command sequence in your terminal panel:
+# 1. Step your terminal directly into your Java sub-module root folder
+cd C:\enterprise-integration-project\01-java-ingestion-service
+
+# 2. Instruct Maven to wipe old folders and execute a full dependency resolution build
+mvn clean compile
+
+Maven has successfully resolved your dependencies, compiled your files into the local target\classes directory, and configured your project layout.
+
+Step 11. Launch the Application Core Server
+
+Create a Centralized Properties File
+Inside your 01-java-ingestion-service directory, look at your file structure.
+mkdir src\main\resources
+create a file application.properties with these contents
+# Force the embedded server to bind to explicit IPv4 interfaces globally
+server.address=0.0.0.0
+
+# Shift the Java service onto its own independent port to prevent collisions with Python
+server.port=8081
+
+Launch Java Server
+Ensure your terminal prompt path is still located exactly inside your Java folder: C:\enterprise-integration-project\01-java-ingestion-service.
+Run this command to start the embedded web engine thread:
+mvn spring-boot:run
+
+Run an Integration Health Check
+http://localhost:8081/health
+
+Step 11: Create more classes
+
+Under \src\main\java\com\utility\ingest, create files MeterRReading.java, SmartMeterPayload.java, IngestionController.java, IntegrationClient.java
+
+and run "mvn clean compile" under \01-java-ingestion-service
+
+and run mvn spring-boot:run
+
+Run an Integration Health Check
+http://localhost:8081/health
+
+Response "status ok" received
+
+
+Step 11: Install Docker Desktop via the Terminal
+
+winget install Docker.DockerDesktop
+
+Run the Docker Desktop app and sign-up/sign-in and wait for Engine Started message at the bottom left of the app.
+
+If the Engine status shows stopped and the screen displays this message "Virtualization support not detected Docker Desktop failed to start because virtualisation support wasn’t detected. Contact your IT admin to enable virtualization or check system requirements." check in TaskManager -> Performance -> CPU if Virtualization is Enabled or Disable.
+If Disabled, BIOS changes are required. Please exercise caution before you do this.
+If Enabled, run this in Powershell (Admin) - Enable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform -All
+Restart Computer
+After that, relaunch Docker Desktop if you see this message "Windows Subsystem for Linux is not installed", run this is Powershell (Admin) - wsl --install
+Once done, if a Linux command prompt shows up, we are all set. Exit this powershell window.
+
+
+Step 12: Create multi-container Docker Setup
+
+Create these three files
+C:\enterprise-integration-project\02-python-transformation-api\Dockerfile: Blueprint to containerize your FastAPI engine.
+C:\enterprise-integration-project\01-java-ingestion-service\Dockerfile: Multi-stage build manifest optimizing your portable runtime JAR.
+C:\enterprise-integration-project\docker-compose.yml: Multi-node system virtualization file mapping ports, system environment secrets, and volumes.
+
+In VS Code Powershell, Run the following commands under C:\enterprise-integration-project:
+
+docker compose up --build -d
+docker compose ps
+curl http://localhost:8081/health
+
+curl -X POST http://localhost:8081/api/v1/ingest/bulk -H "Content-Type: application/json" -d "{\"batchId\": \"BATCH-2026-001\", \"readings\": [{\"meterId\": \"MTR-99\", \"timestamp\": \"2026-07-29T20:20:00Z\", \"kwhValue\": 42.75}]}"
+
+Other useful DOcker commands
+
+docker compose restart
+docker compose stop
+docker compose down
+docker compose up --build -d python-validator
+docker compose logs python-validator
+docker compose restart python-validator
+docker compose stop python-validator
+
+
+
+
+
+
+
+
+
+
+
 
 

@@ -3,6 +3,13 @@ from fastapi import FastAPI
 from app.api.transform import router as transform_router
 from app.config import settings
 
+# --- DATABASE ENGINE IMPORTS ---
+from app.database.connection import engine
+from app.database.models import Base
+
+# Force table generation inside the PostgreSQL container at system startup
+Base.metadata.create_all(bind=engine)
+
 # Configure unified structured logging for the application lifecycle
 logging.basicConfig(
     level=logging.INFO,
@@ -29,8 +36,8 @@ def startup_event():
 @app.get("/")
 def read_root():
     return {
-        "status": "operational", 
-        "engine": "FastAPI", 
+        "status": "operational",
+        "engine": "FastAPI",
         "version": settings.APP_VERSION
     }
 

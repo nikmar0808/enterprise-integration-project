@@ -6,7 +6,7 @@ class ApplicationSettings(BaseSettings):
     Automatically merges operating system environment variables with local config overrides.
     """
     # Application Deployment Parameters
-    APP_TITLE: str = "Energy Utility Transformation API"
+    APP_TITLE: str = "Enterprise Integration Transformation API"
     APP_VERSION: str = "1.0.0"
     
     # Network Layer Settings

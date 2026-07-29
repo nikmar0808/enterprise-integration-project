@@ -1,0 +1,61 @@
+networks:
+  utility-grid-mesh:
+    driver: bridge
+    name: utility-grid-mesh
+
+volumes:
+  postgres_persistent_engine_data:
+    driver: local
+
+services:
+  # Node 1: Relational Enterprise Storage Tier
+  postgres-db:
+    image: postgres:16-alpine
+    container_name: postgres-db
+    restart: always
+    environment:
+      POSTGRES_USER: grid_admin
+      POSTGRES_PASSWORD: secure_grid_password_2026
+      POSTGRES_DB: smart_meter_warehouse
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_persistent_engine_data:/var/lib/postgresql/data
+    networks:
+      - utility-grid-mesh
+
+  # Node 2: High-Speed Validation API Tier
+  python-validator:
+    build:
+      context: ./02-python-transformation-api
+      dockerfile: Dockerfile
+    container_name: python-validator
+    restart: always
+    environment:
+      - API_SECURITY_TOKEN=UTILITY-GRID-SECRET-SECURE-KEY-2026 # Updated to match Python's property name config.py!
+      - DATABASE_URL=postgresql+psycopg://grid_admin:secure_grid_password_2026@postgres-db:5432/smart_meter_warehouse
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres-db
+    networks:
+      - utility-grid-mesh
+
+  # Node 3: Enterprise Gateway Ingress Orchestrator
+  java-gateway:
+    build:
+      context: ./01-java-ingestion-service
+      dockerfile: Dockerfile
+    container_name: java-gateway
+    restart: always
+    environment:
+      - SERVER_PORT=8081
+      # Remap destination URL target dynamically to use internal Docker DNS naming!
+      - INTEGRATION_PYTHON_BASE-URL=http://python-validator:8000
+      - INTEGRATION_PYTHON_AUTH-TOKEN=UTILITY-GRID-SECRET-SECURE-KEY-2026 # Updated to match Python's property name config.py!
+    ports:
+      - "8081:8081"
+    depends_on:
+      - python-validator
+    networks:
+      - utility-grid-mesh
