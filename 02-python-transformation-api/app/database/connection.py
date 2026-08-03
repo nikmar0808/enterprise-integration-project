@@ -4,7 +4,7 @@ import os
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL", 
-    "postgresql+psycopg://grid_admin:secure_grid_password_2026@localhost:5432/smart_meter_warehouse"
+    "postgresql+psycopg://smart_meter_admin:smart_meter_password_2026@localhost:5432/smart_meter_warehouse"
 )
 
 # Production-ready connection pooling engine

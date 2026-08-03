@@ -1,0 +1,12 @@
+.env
+.env.*
+**/target/
+**/.pytest_cache/
+**/__pycache__/
+*.db
+.vscode/
+session_log.md
+*.zip
+folder_structure.txt
+Gemini_prompts.txt
+*.pdf

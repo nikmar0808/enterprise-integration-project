@@ -26,7 +26,7 @@ public class IntegrationClient {
         
         this.restClient = restClientBuilder
                 .baseUrl(cleanBaseUrl)
-                .defaultHeader("X-Utility-Grid-Token", cleanAuthToken)
+                .defaultHeader("X-EAI-Token", cleanAuthToken)
                 .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
                 .build();
     }

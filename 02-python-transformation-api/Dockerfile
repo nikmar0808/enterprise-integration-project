@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY . .
 
 # Step 6: Expose the operational engine network gateway port
-EXPOSE 8000
+EXPOSE 8082
 
 # Step 7: Launch the concurrent asynchronous Uvicorn execution loop
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8082", "--reload"]

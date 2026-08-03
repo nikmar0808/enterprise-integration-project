@@ -1,7 +1,7 @@
 networks:
-  utility-grid-mesh:
+  eai-mesh:
     driver: bridge
-    name: utility-grid-mesh
+    name: eai-mesh
 
 volumes:
   postgres_persistent_engine_data:
@@ -13,16 +13,18 @@ services:
     image: postgres:16-alpine
     container_name: postgres-db
     restart: always
+    command: postgres -c log_timezone=Asia/Kolkata -c timezone=Asia/Kolkata
     environment:
-      POSTGRES_USER: grid_admin
-      POSTGRES_PASSWORD: secure_grid_password_2026
-      POSTGRES_DB: smart_meter_warehouse
+      - POSTGRES_USER=smart_meter_admin
+      - POSTGRES_PASSWORD=smart_meter_password_2026
+      - POSTGRES_DB=smart_meter_warehouse
+      - TZ=Asia/Kolkata
     ports:
       - "5432:5432"
     volumes:
       - postgres_persistent_engine_data:/var/lib/postgresql/data
     networks:
-      - utility-grid-mesh
+      - eai-mesh
 
   # Node 2: High-Speed Validation API Tier
   python-validator:
@@ -32,14 +34,15 @@ services:
     container_name: python-validator
     restart: always
     environment:
-      - API_SECURITY_TOKEN=UTILITY-GRID-SECRET-SECURE-KEY-2026 # Updated to match Python's property name config.py!
-      - DATABASE_URL=postgresql+psycopg://grid_admin:secure_grid_password_2026@postgres-db:5432/smart_meter_warehouse
+      - API_SECURITY_TOKEN=EAI-SECRET-SECURE-KEY-2026 # Updated to match Python's property name config.py!
+      - DATABASE_URL=postgresql+psycopg://smart_meter_admin:smart_meter_password_2026@postgres-db:5432/smart_meter_warehouse
+      - TZ=Asia/Kolkata
     ports:
-      - "8000:8000"
+      - "8082:8082"
     depends_on:
       - postgres-db
     networks:
-      - utility-grid-mesh
+      - eai-mesh
 
   # Node 3: Enterprise Gateway Ingress Orchestrator
   java-gateway:
@@ -51,11 +54,13 @@ services:
     environment:
       - SERVER_PORT=8081
       # Remap destination URL target dynamically to use internal Docker DNS naming!
-      - INTEGRATION_PYTHON_BASE-URL=http://python-validator:8000
-      - INTEGRATION_PYTHON_AUTH-TOKEN=UTILITY-GRID-SECRET-SECURE-KEY-2026 # Updated to match Python's property name config.py!
+      - INTEGRATION_PYTHON_BASE-URL=http://python-validator:8082
+      - INTEGRATION_PYTHON_AUTH-TOKEN=EAI-SECRET-SECURE-KEY-2026 # Updated to match Python's property name config.py!
+      - TZ=Asia/Kolkata
+      - JAVA_OPTS=-Duser.timezone=Asia/Kolkata
     ports:
       - "8081:8081"
     depends_on:
       - python-validator
     networks:
-      - utility-grid-mesh
+      - eai-mesh

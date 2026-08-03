@@ -11,10 +11,10 @@ class ApplicationSettings(BaseSettings):
     
     # Network Layer Settings
     API_HOST: str = "0.0.0.0"
-    API_PORT: int = 8000
+    API_PORT: int = 8082
     
     # Inbound Security Key Contract (Simulated Token Authentication)
-    API_SECURITY_TOKEN: str = "UTILITY-GRID-SECRET-SECURE-KEY-2026"
+    API_SECURITY_TOKEN: str = "EAI-SECRET-SECURE-KEY-2026"
 
     # Instructs Pydantic to read configuration from a local file if available
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")

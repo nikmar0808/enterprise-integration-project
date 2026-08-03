@@ -25,7 +25,7 @@ def test_endpoint_denies_access_with_incorrect_security_token():
     """
     ARRANGE / ACT: Fire a request with an invalid malformed header key token.
     """
-    headers = {"X-Utility-Grid-Token": "WRONG-TOKEN-123"}
+    headers = {"X-EAI-TOKEN": "WRONG-TOKEN-123"}
     response = client.post("/api/v1/transform", headers=headers, json={})
     
     # ASSERT: Connection must be blocked
@@ -40,7 +40,7 @@ def test_endpoint_accepts_and_processes_valid_telemetry_payload():
     """
     ARRANGE: Construct a perfectly valid mock JSON transaction payload.
     """
-    headers = {"X-Utility-Grid-Token": settings.API_SECURITY_TOKEN}
+    headers = {"X-EAI-TOKEN": settings.API_SECURITY_TOKEN}
     valid_payload = {
         "meter_id": "MTR-2026-TEST",
         "grid_zone": "WEST-ZONE-ALPHA",
@@ -65,7 +65,7 @@ def test_endpoint_rejects_payload_violating_numerical_business_constraints():
     """
     ARRANGE: Construct a broken payload that violates the positive consumption rule (gt=0.0).
     """
-    headers = {"X-Utility-Grid-Token": settings.API_SECURITY_TOKEN}
+    headers = {"X-EAI-TOKEN": settings.API_SECURITY_TOKEN}
     invalid_payload = {
         "meter_id": "MTR-2026-TEST",
         "grid_zone": "WEST-ZONE-ALPHA",

@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime
 from app.database.connection import Base
 import datetime
+# zoneinfo import ZoneInfo  --is available in Python 3.9 and later. If you're using an earlier version, you can use the backports.zoneinfo package.
 
 class SmartMeterIntervalRecord(Base):
     """
@@ -15,3 +16,4 @@ class SmartMeterIntervalRecord(Base):
     kwh_value = Column(Float, nullable=False)
     voltage = Column(Float, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+

@@ -14,7 +14,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 # Declare the specific header key name the system will look for in network packets
-API_KEY_NAME = "X-Utility-Grid-Token"
+API_KEY_NAME = "X-EAI-TOKEN"
 api_key_header_guard = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 # FastAPI is built natively on top of the OpenAPI Specification (formerly known as Swagger).
