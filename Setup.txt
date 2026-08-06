@@ -376,3 +376,8 @@ git push origin develop  --> Push locally committed changes to active develop/st
 
 
 Main Branch
+git checkout main
+git pull origin main
+git merge develop
+git push origin main
+git checkout develop
