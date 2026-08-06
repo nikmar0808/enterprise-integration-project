@@ -1,0 +1,10 @@
+.env
+.env.*
+**/target/
+**/.pytest_cache/
+**/__pycache__/
+*.db
+.vscode/
+*.zip
+*.pdf
+misc
