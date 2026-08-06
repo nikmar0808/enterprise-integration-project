@@ -213,5 +213,4 @@ enterprise-integration-project/
 ```bash
 docker compose down
 ```
-
 This stops and removes the containers. The Postgres data volume (`postgres_persistent_engine_data`) persists separately — add `-v` to `docker compose down -v` if a full data reset is intended.
