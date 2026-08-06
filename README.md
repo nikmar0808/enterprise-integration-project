@@ -164,7 +164,6 @@ The stack is fully configured via `docker-compose.yml` — no additional setup i
 | `python-validator` | `DATABASE_URL` | Full Postgres connection string |
 | `java-gateway` | `INTEGRATION_PYTHON_BASE-URL`, `INTEGRATION_PYTHON_AUTH-TOKEN` | Downstream Python service address and shared token |
 
-**Before pushing this repository publicly**: `02-python-transformation-api/.env` and its `.gitignore` (which currently only excludes `.venv/`) mean the `.env` file's contents — including a placeholder security token — are not excluded from version control. Consider adding `.env` to `.gitignore` and rotating any token values that were ever committed, even placeholder-looking ones.
 
 ## Repository Structure
 
