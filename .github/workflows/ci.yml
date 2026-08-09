@@ -21,6 +21,20 @@ jobs:
 
   python-build-test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: smart_meter_admin
+          POSTGRES_PASSWORD: smart_meter_password_2026
+          POSTGRES_DB: smart_meter_warehouse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -31,6 +45,8 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run tests
         working-directory: 02-python-transformation-api
+        env:
+          DATABASE_URL: postgresql+psycopg://smart_meter_admin:smart_meter_password_2026@localhost:5432/smart_meter_warehouse
         run: pytest tests
 
   docker-build-push-java:
