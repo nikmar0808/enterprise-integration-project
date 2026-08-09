@@ -8,3 +8,5 @@
 *.zip
 *.pdf
 misc
+*.pem
+eai-project-key
