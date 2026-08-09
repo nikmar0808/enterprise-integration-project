@@ -20,4 +20,4 @@ COPY . .
 EXPOSE 8082
 
 # Step 7: Launch the concurrent asynchronous Uvicorn execution loop
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8082", "--reload"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8082"]
