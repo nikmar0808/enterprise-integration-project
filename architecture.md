@@ -61,7 +61,104 @@
 └───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-  A separate utility, `services/transformer.py` (a `LegacyXMLTransformer` class), exists in the Python codebase for converting legacy XML telemetry files into the same payload shape — it's not part of the live request path above; see Part 2, Section 5.5 for detail.
+This would be deployed on Free-tier AWS like this:
+```text
+                  [ PUBLIC INTERNET ]
+                           │
+                           ▼
+               [ Amazon API Gateway ] (HTTP API)
+                           │
+                           ▼
+             [ Amazon EC2 Instance ] (t2.micro / t3.micro)
+       ┌──────────────────────────────────────────────┐
+       │  🐳 Docker Engine                            │
+       │   ├── java-gateway container (Port 8081)    │
+       │   └── python-validator container             │
+       └──────────────────────────────────────────────┘
+                           │
+                           ▼ (Internal VPC Route on Port 5432)
+               [ Amazon RDS PostgreSQL ] (db.t4g.micro)
+```
+
+However, **Free-Tier Selection vs. Enterprise Production Reality** would like this:
+
+| Component Layer | Your Free Tier Setup | Enterprise Production Standard | The Industry Alignment Match |
+| :--- | :--- | :--- | :--- |
+| **Compute Engine** | Single EC2 Instance (`t2.micro` or `t3.micro`) | Amazon ECS on AWS Fargate or an Autoscaling Group of EC2 instances behind an Application Load Balancer | **Identical Core Engine**<br>Both setups run your application inside Docker containers. Transitioning from managing Docker on an EC2 instance to running it on managed AWS Fargate requires no changes to your application code. |
+| **Data Layer** | Single AZ Amazon RDS PostgreSQL db (`t4g.micro`) | Multi-AZ Amazon RDS with automated read replicas or Amazon Aurora | **Identical Engine Mechanics**<br>Your Terraform script uses the exact same `aws_db_instance` resource blocks. To flip your Free Tier database into an enterprise-grade database, you simply change `publicly_accessible = false` to include `multi_az = true` in your code. |
+| **API Boundary** | Amazon API Gateway HTTP API | Amazon API Gateway REST/HTTP API backed by AWS WAF (Web Application Firewall) | **100% Identical**<br>Mid-stage startups and enterprises routinely use Amazon API Gateway to manage external consumer traffic, control rate limiting, and authenticate requests using JWT tokens or API keys. |
+| **Secret Management** | Systems Manager Parameter Store (`SecureString`) | AWS Secrets Manager | **Identical Security Principle**<br>Both methods extract plaintext configurations out of your git repositories and code blocks. Parameter Store is the standard choice for cost-conscious environments, while Secrets Manager is chosen when automated 30-day credential rotation is required. |
+
+```text
+                                  [ THE PUBLIC EDGE ]
+                                           │
+                                           │ HTTPS / Port 443
+                                           ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│ Name: aws_apigatewayv2_api.http_api                                                 │
+│ AWS Feature: Amazon API Gateway (HTTP API)                                          │
+│ Purpose: Directs incoming public web service calls to internal server networks      │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+                                           │
+                                           │ HTTP / Route: /api/v1/ingest
+                                           ▼
+                          ===================================
+                          ENTERPRISE VPC: 10.0.0.0/16
+                          ===================================
+                                           │
+                                           ├────────────────────────────────────────┐
+                                           ▼ (Zone: ap-south-1a)                    ▼ (Zone: ap-south-1b)
+┌─────────────────────────────────────────────────────────────┐ ┌───────────────────────────────────┐
+│ SUBNET 1 (Public / Data Access Bridge)                      │ │ SUBNET 2 (Private / Isolated)     │
+│ Name: aws_subnet.subnet-1                                   │ │ Name: aws_subnet.subnet-2         │
+│ CIDR Block: 10.0.1.0/24                                     │ │ CIDR Block: 10.0.2.0/24           │
+├─────────────────────────────────────────────────────────────┤ └───────────────────────────────────┘
+│                                                             │                   │
+│  ┌───────────────────────────────────────────────────────┐  │                   │
+│  │ Firewall: aws_security_group.app_sg                   │  │                   │
+│  │ Inbound Rules:                                        │  │                   │
+│  │  - Port 22 (SSH): Open to Developer Desktop IP only   │  │                   │
+│  │  - Port 8081 (HTTP): Open to API Gateway only         │  │                   │
+│  └───────────────────────────────────────────────────────┘  │                   │
+│                             │                               │                   │
+│                             ▼                               │                   │
+│  ┌───────────────────────────────────────────────────────┐  │                   │
+│  │ Name: aws_instance.app_server                         │  │                   │
+│  │ AWS Feature: Amazon EC2 (t2.micro / t3.micro)         │  │                   │
+│  ├───────────────────────────────────────────────────────┤  │                   │
+│  │  🐳 DOCKER COMPOSE ENGINE RUNTEMES                    │  │                   │
+│  │                                                       │  │                   │
+│  │   ├── Container Name: java-gateway                    │  │                   │
+│  │   │   - Host Port Bound: 8081                         │  │                   │
+│  │   │   - REST Endpoint: /api/v1/ingest                 │  │                   │
+│  │   │                                                   │  │                   │
+│  │   └── Container Name: python-validator                │  │                   │
+│  │       - Host Port Bound: 8082                         │  │                   │
+│  │       - REST Endpoint: /api/v1/transform              │  │                   │
+│  └───────────────────────────────────────────────────────┘  │                   │
+│                             │                               │                   │
+└─────────────────────────────┼───────────────────────────────┘                   │
+                              │                                                   │
+                              │ PostgreSQL Route / Internal Port 5432             │
+                              ▼                                                   ▼
+┌───────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Name: aws_db_subnet_group.rds_subnet_group                                                        │
+│ AWS Feature: RDS DB Subnet Group (Combines Subnet 1 and Subnet 2 for High Availability layout)    │
+├───────────────────────────────────────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────────────────────────────────────────────────────────────────────────┐ │
+│  │ Firewall: aws_security_group.db_sg                                                           │ │
+│  │ Inbound Rule: Port 5432 (PostgreSQL) allowed *strictly* from aws_security_group.app_sg source│ │
+│  └──────────────────────────────────────────────────────────────────────────────────────────────┘ │
+│                                                 │                                                 │
+│                                                 ▼                                                 │
+│  ┌─────────────────────────────────────────────────────────────────────────────────────────────┐  │
+│  │ Name: aws_db_instance.smart_meter_db                                                        │  │
+│  │ AWS Feature: Amazon RDS for PostgreSQL (db.t4g.micro Engine)                                │  │
+│  │ Core Database Setting: publicly_accessible = false                                          │  │
+│  │ Database Target Schema Name: smart_meter_warehouse                                          │  │
+│  └─────────────────────────────────────────────────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 #### Client Ingress & Request Listening
   1. **Action**: The engineer executes a `curl -X POST` terminal command against `http://localhost:8081/api/v1/ingest/bulk`.
@@ -501,6 +598,16 @@ return restClient.post()
 
 #### The Python FastAPI Transformation Microservice: Request Flow
   This traces exactly how the codebase handles an incoming request on port `8082`.
+
+  While Uvicorn handles a single process efficiently on its own, for large-scale production use it is commonly paired with a process manager like Gunicorn to spawn multiple Uvicorn worker processes and utilize all available CPU cores.
+
+  FastAPI is the application code that defines your API endpoints. It  cannot listen to network ports natively: It is a framework, not a server. It doesn't know how to open a socket, listen for raw HTTP data on port 8000, or manage TLS/SSL certificates. It needs Uvicorn to catch incoming traffic and hand it over.
+  
+  Uvicorn is the web server that runs that code and communicates with the outside world. It doesn't know about business logic. It doesn't know what /users or /items means, how to validate an email address, or how to talk to the database. It needs FastAPI to process the actual request data.
+  
+  The Asynchronous Connection: FastAPI is built from the ground up to support asynchronous (async/await) programming. Uvicorn is built specifically as an ASGI (Asynchronous Server Gateway Interface) server. This allows them to handle thousands of concurrent requests together without freezing up.
+
+  Think of FastAPI as the brain (handling the logic, data validation, and routes) and Uvicorn as the engine (handling the network connections, HTTP requests, and data transmission).
 
 ```text
 
