@@ -1,5 +1,0 @@
-com\utility\ingest\IngestionController.class
-com\utility\ingest\SmartMeterPayload.class
-com\utility\ingest\IntegrationClient.class
-com\utility\ingest\IngestionApplication.class
-com\utility\ingest\MeterReading.class
