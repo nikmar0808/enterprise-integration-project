@@ -1,4 +1,4 @@
-# Enterprise Integration Plaform - Java21 and Python 3.14 DevOps Pipeline, Github Actions CI, multi-stage Docker containers, Terraform-based Infrastructure-as-Code on AWS, OIDC-based authentication between Github Actions/Terraform and AWS
+# OIDC-Secured DevOps Reference Pipeline
 
 A two-service reference implementation demonstrating a production-style DevOps pipeline: hardened multi-stage containers, dependency and secret scanning in CI, credential-free (OIDC-based) authentication between GitHub Actions / Terraform Cloud and AWS, Infrastructure-as-Code provisioning, and a gated deployment path — with no long-lived AWS access keys stored anywhere in the system.
 
@@ -69,15 +69,15 @@ Full design rationale — why each of these choices was made — is documented i
 
 ## Local quickstart
 
-Requires Docker and Docker Compose. No AWS account is needed for this path — it verifies the application layer independently of the cloud deployment.
+Requires Docker and Docker Compose. No AWS account is needed for this path — it verifies the application layer independently of the cloud deployment. `docker-compose.dev.yml` builds the application images from source and includes a containerized PostgreSQL instance; it is distinct from `infra/docker-compose.prod.yml`, used only by the deployed AWS environment (see [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)).
 
 ```bash
 # Run from the repository root
 git clone https://github.com/<GITHUB_ORG>/<REPO_NAME>.git
 cd <REPO_NAME>
 
-docker compose up --build -d
-docker compose ps               # all three services should report "healthy" or "running"
+docker compose -f docker-compose.dev.yml up --build -d
+docker compose -f docker-compose.dev.yml ps               # all three services should report "healthy" or "running"
 
 curl http://localhost:8081/health
 curl -X POST http://localhost:8081/api/v1/ingest/bulk \
@@ -90,8 +90,8 @@ curl -X POST http://localhost:8081/api/v1/ingest/bulk \
 git clone https://github.com/<GITHUB_ORG>/<REPO_NAME>.git
 cd <REPO_NAME>
 
-docker compose up --build -d
-docker compose ps
+docker compose -f docker-compose.dev.yml up --build -d
+docker compose -f docker-compose.dev.yml ps
 
 Invoke-RestMethod -Uri http://localhost:8081/health
 Invoke-RestMethod -Uri http://localhost:8081/api/v1/ingest/bulk -Method Post -ContentType "application/json" `

@@ -30,6 +30,86 @@ Every command block below uses the placeholders in this table. Replace all occur
 
 ---
 
+## Phase 0 — Local Development Verification
+
+This step confirms the application layer works correctly, independently of any AWS resource, before proceeding to cloud deployment. `docker-compose.dev.yml` already exists in the cloned repository (created as part of the project's container-hardening work); it is shown here in full for reference and to confirm its role before the production-only `infra/docker-compose.prod.yml` is introduced in Phase 3.
+
+**Existing file — no changes required:** `docker-compose.dev.yml` (repository root).
+
+```yaml
+networks:
+  eai-mesh:
+    driver: bridge
+volumes:
+  postgres_persistent_engine_data:
+services:
+  postgres-db:
+    image: postgres:16-alpine
+    container_name: postgres-db
+    restart: always
+    command: postgres -c log_timezone=Asia/Kolkata -c timezone=Asia/Kolkata
+    environment:
+      - POSTGRES_USER=smart_meter_admin
+      - POSTGRES_PASSWORD=smart_meter_password_2026
+      - POSTGRES_DB=smart_meter_warehouse
+      - TZ=Asia/Kolkata
+    ports: ["5432:5432"]
+    volumes:
+      - postgres_persistent_engine_data:/var/lib/postgresql/data
+    networks: [eai-mesh]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smart_meter_admin -d smart_meter_warehouse"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  python-validator:
+    build: { context: ./02-python-transformation-api, dockerfile: Dockerfile }
+    container_name: python-validator
+    restart: always
+    environment:
+      - API_SECURITY_TOKEN=EAI-SECRET-SECURE-KEY-2026
+      - DATABASE_URL=postgresql+psycopg://smart_meter_admin:smart_meter_password_2026@postgres-db:5432/smart_meter_warehouse
+      - TZ=Asia/Kolkata
+    ports: ["8082:8082"]
+    depends_on:
+      postgres-db: { condition: service_healthy }
+    networks: [eai-mesh]
+
+  java-gateway:
+    build: { context: ./01-java-ingestion-service, dockerfile: Dockerfile }
+    container_name: java-gateway
+    restart: always
+    environment:
+      - SERVER_PORT=8081
+      - INTEGRATION_PYTHON_BASE-URL=http://python-validator:8082
+      - INTEGRATION_PYTHON_AUTH-TOKEN=EAI-SECRET-SECURE-KEY-2026
+      - TZ=Asia/Kolkata
+      - JAVA_OPTS=-Duser.timezone=Asia/Kolkata
+    ports: ["8081:8081"]
+    depends_on: [python-validator]
+    networks: [eai-mesh]
+```
+
+**Verify:**
+
+```bash
+# Run from: <repo-root>
+docker compose -f docker-compose.dev.yml up --build -d
+docker compose -f docker-compose.dev.yml ps
+curl http://localhost:8081/health
+```
+```powershell
+# PowerShell equivalent — run from: <repo-root>
+docker compose -f docker-compose.dev.yml up --build -d
+docker compose -f docker-compose.dev.yml ps
+Invoke-RestMethod -Uri http://localhost:8081/health
+```
+
+**Expected result:** all three services report `running` or `healthy`; the health check returns `{"status":"UP"}`. Once confirmed, the local stack can be stopped (`docker compose -f docker-compose.dev.yml down`) before proceeding — Phase 1 onward does not depend on it remaining up.
+
+---
+
 ## Phase 1 — Identity and Access Bootstrap
 
 ### 1.1 Local bootstrap of OIDC trust relationships
@@ -229,7 +309,7 @@ terraform {
 }
 ```
 
-No other file in this phase requires editing an existing resource from scratch — `infra/eai-project.tf` (Section 2.6) is shown in full because it already contains resources from the pre-DevOps baseline (the VPC and initial subnet) that the new resources depend on; `networking.tf`, `ecr.tf`, `rds.tf`, `iam-gha.tf`, `iam-ec2.tf`, and `api-gateway.tf` are new files created in this phase.
+`networking.tf`, `ecr.tf`, `rds.tf`, `iam-gha.tf`, `iam-ec2.tf`, and `api-gateway.tf` are new files, created fresh in this phase. `infra/eai-project.tf` (Section 2.6) is the one exception: it already exists in the cloned repository, containing the VPC and first subnet that the new resources in this phase depend on, so it is shown here in full — incorporating this phase's changes — rather than as a diff.
 
 ### 2.1 Second subnet
 
@@ -461,7 +541,7 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 
 ### 2.6 Complete `infra/eai-project.tf`
 
-This file already exists in the cloned repository, containing the VPC, the first subnet, and the compute instance from the pre-DevOps baseline. The listing below is the **complete file after this phase's changes** — shown in full, rather than as a diff, so there is no ambiguity about what surrounding content to preserve. Three changes from the baseline are called out inline: the provider block no longer references a profile or SSO login, the SSH ingress rule and key pair are removed in favor of SSM, and the instance gains an IAM instance profile.
+This file already exists in the cloned repository, containing the VPC, the first subnet, and the compute instance. The listing below is the **complete file after this phase's changes** — shown in full, rather than as a diff, so there is no ambiguity about what surrounding content to preserve. Three changes are called out inline: the provider block no longer references a profile or SSO login, the SSH ingress rule and key pair are removed in favor of SSM, and the instance gains an IAM instance profile.
 
 ```hcl
 provider "aws" {
@@ -631,7 +711,7 @@ output "api_gateway_url" { value = aws_apigatewayv2_api.eai_http_api.api_endpoin
 
 ### 2.8 Commit and apply
 
-`infra/main.tf` was edited in place (Terraform Cloud organization/workspace values) but is not included in the commit below on its own — commit it together with the first change in this phase, since Terraform will not apply without both the backend pointing at the correct workspace and at least one resource file present.
+`infra/main.tf` already exists in the cloned repository and needs only its Terraform Cloud organization and workspace values updated (Section 2.1) — it is not a new file. It is still included in the commit below because Terraform cannot apply successfully without the backend configuration and at least one resource file both being present together.
 
 ```bash
 # Run from: <repo-root>/infra
@@ -648,11 +728,61 @@ git commit -m "infra: AWS Resource Provisioning - RDS, API Gateway, SSM Paramete
 git push origin <branch-name>
 ```
 
+### 2.9 Confirm the apply and record its outputs
+
+Pushing the commit above only queues a Terraform Cloud run — it does not, by itself, create anything in AWS. In the Terraform Cloud web interface, open the workspace and confirm:
+
+1. A new run appears, triggered by this push, and its **plan** stage completes without errors.
+2. Unless the workspace has auto-apply enabled, the run pauses awaiting confirmation — click **Confirm & Apply** to actually provision the resources.
+3. The **apply** stage completes successfully. This takes several minutes, mainly waiting on the RDS instance to become available.
+
+Once the apply succeeds, retrieve the `rds_endpoint` output from the workspace's **Outputs** tab in the Terraform Cloud UI (or, if applying locally instead, `terraform output -raw rds_endpoint` from `infra/`). **This value is required as the `RDS_ENDPOINT` GitHub Actions variable in Phase 3 — do not proceed to that step until it has been retrieved.**
+
 ---
 
 ## Phase 3 — CI/CD Pipeline
 
-`.github/workflows/ci.yml`:
+This phase introduces a second Docker Compose file, distinct from the one at the repository root used for local development:
+
+| | `docker-compose.dev.yml` (repository root) | `infra/docker-compose.prod.yml` (created below) |
+|---|---|---|
+| Used by | Local development | The deployed EC2 instance |
+| Application images | Built from source | Pulled from Amazon ECR |
+| PostgreSQL | Containerized, included in this file | Not present — Amazon RDS is used instead |
+| Secrets | Hardcoded literal values (a disposable local database) | Injected from an `.env` file assembled from SSM Parameter Store at deploy time |
+
+The two files diverge on every one of these points, which is why they are kept separate rather than combined with conditionals.
+
+**Create `infra/docker-compose.prod.yml`** with the following content. This file is referenced by the deployment workflow created next, so it must exist first:
+
+```yaml
+networks:
+  eai-mesh:
+    driver: bridge
+services:
+  python-validator:
+    image: ${ECR_REGISTRY}/eai-python-validator:${IMAGE_TAG}
+    restart: always
+    environment:
+      - API_SECURITY_TOKEN=${API_SECURITY_TOKEN}
+      - DATABASE_URL=${DATABASE_URL}
+      - TZ=Asia/Kolkata
+    networks: [eai-mesh]
+  java-gateway:
+    image: ${ECR_REGISTRY}/eai-java-gateway:${IMAGE_TAG}
+    restart: always
+    environment:
+      - SERVER_PORT=8081
+      - INTEGRATION_PYTHON_BASE-URL=http://python-validator:8082
+      - INTEGRATION_PYTHON_AUTH-TOKEN=${API_SECURITY_TOKEN}
+      - TZ=Asia/Kolkata
+      - JAVA_OPTS=-Duser.timezone=Asia/Kolkata
+    ports: ["8081:8081"]
+    depends_on: [python-validator]
+    networks: [eai-mesh]
+```
+
+**Create `.github/workflows/ci.yml`** with the following content:
 
 ```yaml
 name: CI
@@ -737,11 +867,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
-        with: { role-to-assume: "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/gha-deploy-role", aws-region: ${{ env.AWS_REGION }} }
+        with: { role-to-assume: "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/gha-deploy-role", aws-region: "${{ env.AWS_REGION }}" }
       - uses: aws-actions/amazon-ecr-login@v2
       - run: docker build -t $ECR_REGISTRY/eai-java-gateway:${{ github.sha }} ./01-java-ingestion-service
       - uses: aquasecurity/trivy-action@master
-        with: { image-ref: "${{ env.ECR_REGISTRY }}/eai-java-gateway:${{ github.sha }}", severity: CRITICAL,HIGH, exit-code: 1 }
+        with: { image-ref: "${{ env.ECR_REGISTRY }}/eai-java-gateway:${{ github.sha }}", severity: "CRITICAL,HIGH", exit-code: 1 }
       - run: docker push $ECR_REGISTRY/eai-java-gateway:${{ github.sha }}
 
   docker-build-push-python:
@@ -752,11 +882,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
-        with: { role-to-assume: "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/gha-deploy-role", aws-region: ${{ env.AWS_REGION }} }
+        with: { role-to-assume: "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/gha-deploy-role", aws-region: "${{ env.AWS_REGION }}" }
       - uses: aws-actions/amazon-ecr-login@v2
       - run: docker build -t $ECR_REGISTRY/eai-python-validator:${{ github.sha }} ./02-python-transformation-api
       - uses: aquasecurity/trivy-action@master
-        with: { image-ref: "${{ env.ECR_REGISTRY }}/eai-python-validator:${{ github.sha }}", severity: CRITICAL,HIGH, exit-code: 1 }
+        with: { image-ref: "${{ env.ECR_REGISTRY }}/eai-python-validator:${{ github.sha }}", severity: "CRITICAL,HIGH", exit-code: 1 }
       - run: docker push $ECR_REGISTRY/eai-python-validator:${{ github.sha }}
 
   deploy:
@@ -768,7 +898,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
-        with: { role-to-assume: "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/gha-deploy-role", aws-region: ${{ env.AWS_REGION }} }
+        with: { role-to-assume: "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/gha-deploy-role", aws-region: "${{ env.AWS_REGION }}" }
       - name: Deploy via SSM
         run: |
           COMPOSE_B64=$(base64 -w0 infra/docker-compose.prod.yml)
@@ -776,14 +906,14 @@ jobs:
             --targets "Key=tag:Name,Values=<EC2_TAG_NAME>" \
             --document-name "AWS-RunShellScript" \
             --parameters commands="[
-              \"echo $COMPOSE_B64 | base64 -d > /opt/eai/docker-compose.yml\",
+              \"echo $COMPOSE_B64 | base64 -d > /opt/eai/docker-compose.prod.yml\",
               \"DB_PASS=\$(aws ssm get-parameter --name /eai-project/rds/master_password --with-decryption --query Parameter.Value --output text --region ${{ env.AWS_REGION }})\",
               \"API_TOKEN=\$(aws ssm get-parameter --name /eai-project/api/security_token --with-decryption --query Parameter.Value --output text --region ${{ env.AWS_REGION }})\",
               \"echo DATABASE_URL=postgresql+psycopg://smart_meter_admin:\$DB_PASS@${{ vars.RDS_ENDPOINT }}:5432/smart_meter_warehouse > /opt/eai/.env\",
               \"echo API_SECURITY_TOKEN=\$API_TOKEN >> /opt/eai/.env\",
               \"aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}\",
-              \"cd /opt/eai && ECR_REGISTRY=${{ env.ECR_REGISTRY }} IMAGE_TAG=${{ github.sha }} docker-compose --env-file .env pull\",
-              \"cd /opt/eai && ECR_REGISTRY=${{ env.ECR_REGISTRY }} IMAGE_TAG=${{ github.sha }} docker-compose --env-file .env up -d\"
+              \"cd /opt/eai && ECR_REGISTRY=${{ env.ECR_REGISTRY }} IMAGE_TAG=${{ github.sha }} docker-compose -f docker-compose.prod.yml --env-file .env pull\",
+              \"cd /opt/eai && ECR_REGISTRY=${{ env.ECR_REGISTRY }} IMAGE_TAG=${{ github.sha }} docker-compose -f docker-compose.prod.yml --env-file .env up -d\"
             ]" \
             --query "Command.CommandId" --output text)
 
@@ -801,36 +931,10 @@ jobs:
 ```
 
 **Repository configuration required (GitHub Settings):**
-- Actions → Variables: `AWS_ACCOUNT_ID` (see placeholder table), `RDS_ENDPOINT` (the `rds_endpoint` Terraform output from Phase 2.3)
+- Settings → Secrets and variables → Actions → **Variables tab → Repository variables** (not Environment variables — `AWS_ACCOUNT_ID` is read by jobs that run before the `production` environment gate, and Environment-scoped variables are invisible to jobs that don't declare `environment:`): `AWS_ACCOUNT_ID` (see placeholder table), `RDS_ENDPOINT` (retrieved in Phase 2.9 — do not proceed here if that value has not yet been obtained)
 - Environments: create `production`, with a required reviewer, to gate the `deploy` job
 
-`infra/docker-compose.prod.yml`:
-```yaml
-networks:
-  eai-mesh:
-    driver: bridge
-services:
-  python-validator:
-    image: ${ECR_REGISTRY}/eai-python-validator:${IMAGE_TAG}
-    restart: always
-    environment:
-      - API_SECURITY_TOKEN=${API_SECURITY_TOKEN}
-      - DATABASE_URL=${DATABASE_URL}
-      - TZ=Asia/Kolkata
-    networks: [eai-mesh]
-  java-gateway:
-    image: ${ECR_REGISTRY}/eai-java-gateway:${IMAGE_TAG}
-    restart: always
-    environment:
-      - SERVER_PORT=8081
-      - INTEGRATION_PYTHON_BASE-URL=http://python-validator:8082
-      - INTEGRATION_PYTHON_AUTH-TOKEN=${API_SECURITY_TOKEN}
-      - TZ=Asia/Kolkata
-      - JAVA_OPTS=-Duser.timezone=Asia/Kolkata
-    ports: ["8081:8081"]
-    depends_on: [python-validator]
-    networks: [eai-mesh]
-```
+Commit both new files:
 
 ```bash
 # Run from: <repo-root>
@@ -881,7 +985,7 @@ Approve the `production` environment gate in the repository's Actions tab when p
 aws ssm start-session --target $(aws ec2 describe-instances \
   --filters "Name=tag:Name,Values=<EC2_TAG_NAME>" "Name=instance-state-name,Values=running" \
   --query "Reservations[0].Instances[0].InstanceId" --output text)
-docker compose -f /opt/eai/docker-compose.yml ps
+docker compose -f /opt/eai/docker-compose.prod.yml ps
 exit
 
 # Run from: <repo-root>/infra
@@ -893,7 +997,7 @@ curl $API_URL/health
 # PowerShell equivalent
 $instanceId = aws ec2 describe-instances --filters "Name=tag:Name,Values=<EC2_TAG_NAME>" "Name=instance-state-name,Values=running" --query "Reservations[0].Instances[0].InstanceId" --output text
 aws ssm start-session --target $instanceId
-# Inside the session: docker compose -f /opt/eai/docker-compose.yml ps
+# Inside the session: docker compose -f /opt/eai/docker-compose.prod.yml ps
 exit
 
 cd infra
