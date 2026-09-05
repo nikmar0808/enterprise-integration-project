@@ -717,14 +717,14 @@ output "api_gateway_url" { value = aws_apigatewayv2_api.eai_http_api.api_endpoin
 # Run from: <repo-root>/infra
 cd infra
 git add main.tf networking.tf ecr.tf rds.tf iam-gha.tf iam-ec2.tf api-gateway.tf eai-project.tf
-git commit -m "infra: AWS Resource Provisioning - RDS, API Gateway, SSM Parameter Store secrets, OIDC-scoped IAM, SSM-based EC2 access"
+git commit -m "infra: RDS, API Gateway, SSM Parameter Store secrets, OIDC-scoped IAM, SSM-based EC2 access"
 git push origin <branch-name>
 ```
 ```powershell
 # PowerShell equivalent — run from: <repo-root>\infra
 cd infra
 git add main.tf networking.tf ecr.tf rds.tf iam-gha.tf iam-ec2.tf api-gateway.tf eai-project.tf
-git commit -m "infra: AWS Resource Provisioning - RDS, API Gateway, SSM Parameter Store secrets, OIDC-scoped IAM, SSM-based EC2 access"
+git commit -m "infra: RDS, API Gateway, SSM Parameter Store secrets, OIDC-scoped IAM, SSM-based EC2 access"
 git push origin <branch-name>
 ```
 
@@ -799,6 +799,11 @@ permissions:
 env:
   AWS_REGION: <AWS_REGION>
   ECR_REGISTRY: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.<AWS_REGION>.amazonaws.com
+  # Avoids the common ghcr.io anonymous-pull rate limit that causes Trivy's
+  # vulnerability DB download to fail in CI; AWS's public ECR mirror is not
+  # subject to the same limit.
+  TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
+  TRIVY_JAVA_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-java-db
 
 jobs:
   secret-scan:
@@ -806,14 +811,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - uses: trufflesecurity/trufflehog@main
+      # Pinned to a released version rather than @main — a floating branch
+      # reference for a security-scanning action is itself a supply-chain risk.
+      - uses: trufflesecurity/trufflehog@v3.94.1
         with: { extra_args: --only-verified }
 
   dependency-scan:
     runs-on: ubuntu-latest
+    # Required by github/codeql-action/upload-sarif below; without it the
+    # upload step fails regardless of whether the SARIF file exists.
+    permissions: { contents: read, security-events: write }
     steps:
       - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@master
+      # Pinned to a specific release, not @master. @master is a materially
+      # higher risk for this action specifically: aquasecurity/trivy-action
+      # tags before 0.35.0 were affected by a real supply-chain compromise
+      # (GHSA-69fq-xp46-6x23); 0.35.0 was confirmed clean by the maintainers.
+      - uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: fs
           scan-ref: .
@@ -821,7 +835,11 @@ jobs:
           exit-code: 1
           format: sarif
           output: trivy-fs-results.sarif
-      - if: always()
+      # Guards against uploading a file that was never written — e.g. if the
+      # Trivy DB pull itself failed rather than the scan simply finding
+      # vulnerabilities, no SARIF file exists and this step is skipped
+      # instead of erroring.
+      - if: always() && hashFiles('trivy-fs-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
         with: { sarif_file: trivy-fs-results.sarif }
 
@@ -830,8 +848,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # cache: maven persists ~/.m2/repository between runs, keyed on
+      # pom.xml. Without it, every run — including repeated re-runs while
+      # debugging — re-downloads the full dependency tree from Maven
+      # Central, which is what triggers 429 rate-limiting under repeated use.
       - uses: actions/setup-java@v4
-        with: { distribution: temurin, java-version: "21" }
+        with: { distribution: temurin, java-version: "21", cache: maven }
       - working-directory: 01-java-ingestion-service
         run: mvn -B verify
 
@@ -851,7 +873,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: "3.14" }
+        with: { python-version: "3.14", cache: pip }
       - working-directory: 02-python-transformation-api
         run: pip install -r requirements.txt
       - working-directory: 02-python-transformation-api
@@ -861,7 +883,12 @@ jobs:
 
   docker-build-push-java:
     needs: java-build-test
-    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    # Runs on a push to ANY branch (but not on pull_request-triggered runs,
+    # which don't need an image pushed) — this is what lets the full
+    # build/scan/push pipeline be validated on a feature branch, before
+    # merging to develop/main. Only the deploy job below is restricted to
+    # main; that is the actual production boundary.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions: { contents: read, id-token: write }
     steps:
@@ -870,13 +897,13 @@ jobs:
         with: { role-to-assume: "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/gha-deploy-role", aws-region: "${{ env.AWS_REGION }}" }
       - uses: aws-actions/amazon-ecr-login@v2
       - run: docker build -t $ECR_REGISTRY/eai-java-gateway:${{ github.sha }} ./01-java-ingestion-service
-      - uses: aquasecurity/trivy-action@master
+      - uses: aquasecurity/trivy-action@0.35.0
         with: { image-ref: "${{ env.ECR_REGISTRY }}/eai-java-gateway:${{ github.sha }}", severity: "CRITICAL,HIGH", exit-code: 1 }
       - run: docker push $ECR_REGISTRY/eai-java-gateway:${{ github.sha }}
 
   docker-build-push-python:
     needs: python-build-test
-    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions: { contents: read, id-token: write }
     steps:
@@ -885,7 +912,7 @@ jobs:
         with: { role-to-assume: "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/gha-deploy-role", aws-region: "${{ env.AWS_REGION }}" }
       - uses: aws-actions/amazon-ecr-login@v2
       - run: docker build -t $ECR_REGISTRY/eai-python-validator:${{ github.sha }} ./02-python-transformation-api
-      - uses: aquasecurity/trivy-action@master
+      - uses: aquasecurity/trivy-action@0.35.0
         with: { image-ref: "${{ env.ECR_REGISTRY }}/eai-python-validator:${{ github.sha }}", severity: "CRITICAL,HIGH", exit-code: 1 }
       - run: docker push $ECR_REGISTRY/eai-python-validator:${{ github.sha }}
 
