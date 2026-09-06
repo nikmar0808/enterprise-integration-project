@@ -11,12 +11,16 @@ provider "aws" {
 
 variable "github_repo" { default = "nikmar0808/enterprise-integration-project" }
 variable "github_username" { default = "nikmar0808" }
-variable "github_repo-name" { default = "enterprise-integration-project" }
+variable "github_repo_name" { default = "enterprise-integration-project" }
 
 resource "aws_iam_openid_connect_provider" "github" {
   url             = "https://token.actions.githubusercontent.com"
   client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]#, "1c58a3a8518e8759bf075b76b750d4f2df264fcd"]
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+  # An alternate thumbprint was considered during troubleshooting and ruled
+  # out — the actual root cause was GitHub's immutable subject claim format
+  # change (see the sub condition below), unrelated to the OIDC provider's
+  # certificate thumbprint.
 }
 
 data "aws_iam_policy_document" "gha_trust" {
@@ -35,23 +39,34 @@ data "aws_iam_policy_document" "gha_trust" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      # Matches a push from any branch of this repository — intentionally
-      # broad, to align with the docker-build-push-* jobs running on every
-      # push (not just develop/main) so the pipeline can be validated on a
-      # feature branch before merging. StringLike's "*" matches across "/"
-      # characters, so this also matches branch names containing slashes
-      # (e.g. infra/phase2-aws-deployment).
+      # Two patterns are matched, because GitHub Actions OIDC tokens can be in
+      # either of two formats depending on when the repository was created:
+      #
+      # 1. The name-only format (repo:OWNER/REPO:ref:refs/heads/BRANCH), used
+      #    by repositories created before GitHub's "Immutable Subject Claims"
+      #    rollout (July 15, 2026).
+      # 2. The immutable format (repo:OWNER@OWNER-ID/REPO@REPO-ID:ref:refs/
+      #    heads/BRANCH), used automatically by repositories created, renamed,
+      #    or transferred on or after that date — this repository included.
+      #    The numeric owner/repo IDs are matched with "*" rather than
+      #    hardcoded, since retrieving them requires a separate GitHub API
+      #    call and StringLike's wildcard matches them regardless of value.
+      #
+      # Diagnostic note: this repository's tokens use format 2. Without the
+      # second pattern below, every AssumeRoleWithWebIdentity call failed
+      # with "Not authorized to perform sts:AssumeRoleWithWebIdentity"
+      # regardless of which branch pattern was tried in format 1 alone — the
+      # branch pattern was never the issue; the claim's overall shape was.
+      # Keeping both patterns (rather than replacing format 1 outright) costs
+      # nothing here and keeps this configuration portable to older,
+      # non-immutable repositories if it's ever reused elsewhere.
       values = [
+        # Following two lines are used during docker-build-push phases
         "repo:${var.github_repo}:ref:refs/heads/*",
-        "repo:${var.github_username}@*/${var.github_repo-name}@*:ref:refs/heads/*",
-        # The pattern in the first line expects the OIDC token to look exactly like repo:nikmar0808/enterprise-integration-project:ref:refs/heads/...
-        # For security reasons (preventing name recycling), GitHub's New Immutable Subject Claims updated the token payload format for newer repositories.
-        # Instead of just passing repo:username/repo-name, it now includes immutable numerical internal IDs appended with an @ symbol.
-        # Because the AWS Trust Policy checks for repo:nikmar0808/enterprise-integration-project:*, we encounter "Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity" error. 
-        # Here's how the git output looks now
-        # Assuming role with OIDC, Authenticated as assumedRoleId AROAYTG35XHB3DFPPOLJJ:GitHubActions
+        "repo:${var.github_username}@*/${var.github_repo_name}@*:ref:refs/heads/*",
+        # Following two lines are used during production deploy phase
         "repo:${var.github_repo}:environment:production",
-        "repo:${var.github_username}@*/${var.github_repo-name}@*:environment:production"
+        "repo:${var.github_username}@*/${var.github_repo_name}@*:environment:production"
       ]
     }
   }

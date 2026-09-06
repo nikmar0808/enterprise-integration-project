@@ -16,15 +16,11 @@ This document explains why the system is built the way it is. It does not contai
 
 ## 2. Findings That Shaped the Design
 
-The following conditions, identified during repository review, directly informed specific design decisions:
-
 | Finding | Design response |
 |---|---|
-| Build artifacts (`target/`, `__pycache__/`) had been committed prior to `.gitignore` covering them. `.gitignore` only prevents new matching files from being tracked — it does not retroactively untrack existing ones. | Repository hygiene phase includes an explicit `git rm --cached` step, not just a `.gitignore` edit. |
-| The original Terraform provider configuration referenced `aws sso login`, i.e., IAM Identity Center. | Replaced with `aws login` for one-time local bootstrap and Terraform Cloud OIDC for all subsequent operations (Section 4 below). |
-| The PostgreSQL service had no `healthcheck:` directive, so dependent services could start before the database was ready to accept connections. | A `pg_isready`-based healthcheck with `depends_on: condition: service_healthy` was added. |
-| Amazon RDS requires a DB subnet group spanning at least two Availability Zones, even for a single-AZ instance; the original network topology defined only one subnet. | A second subnet was added specifically to satisfy this requirement. |
+| The original Terraform provider configuration referenced `aws sso login`, i.e., IAM Identity Center. | Replaced with `aws login` for one-time local bootstrap and Terraform Cloud OIDC for all subsequent operations (see Appendix A). |
 | The transformation service's port was exposed to the public internet despite being called only by the ingestion service over the internal network. | Removed from the production network configuration; the port is internal-only in the deployed environment. |
+| The OIDC trust policy's `sub` condition, written against GitHub's name-only subject claim format, silently never matched — this repository's tokens use GitHub's newer immutable subject claim format (`repo:OWNER@OWNER-ID/REPO@REPO-ID:...`, automatic for repositories created or renamed on or after 2026-07-15), causing every role-assumption attempt to fail regardless of which branch pattern was configured. | Both claim formats are matched simultaneously, with the immutable format's numeric owner/repo IDs matched by wildcard rather than hardcoded — see the trust policy comment in `DEPLOYMENT.md`'s identity bootstrap section for the full explanation. |
 
 ---
 
