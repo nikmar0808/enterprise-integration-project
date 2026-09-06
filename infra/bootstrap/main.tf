@@ -40,7 +40,8 @@ data "aws_iam_policy_document" "gha_trust" {
       # characters, so this also matches branch names containing slashes
       # (e.g. infra/phase2-aws-deployment).
       values = [
-        "repo:${var.github_repo}:ref:refs/heads/*"
+        "repo:${var.github_repo}:ref:refs/heads/*",
+        "repo:${var.github_repo}:environment:production"
       ]
     }
   }
