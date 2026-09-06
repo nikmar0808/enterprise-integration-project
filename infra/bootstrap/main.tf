@@ -14,7 +14,7 @@ variable "github_repo" { default = "nikmar0808/enterprise-integration-project" }
 resource "aws_iam_openid_connect_provider" "github" {
   url             = "https://token.actions.githubusercontent.com"
   client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = []
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1", "1c58a3a8518e8759bf075b76b750d4f2df264fcd"]
 }
 
 data "aws_iam_policy_document" "gha_trust" {
@@ -40,7 +40,8 @@ data "aws_iam_policy_document" "gha_trust" {
       # characters, so this also matches branch names containing slashes
       # (e.g. infra/phase2-aws-deployment).
       values = [
-        "repo:${var.github_repo}:*"
+        "repo:${var.github_repo}:ref:refs/heads/*",
+        "repo:nikmar0808@*/enterprise-integration-project@*:ref:refs/heads/*"
       ]
     }
   }
