@@ -10,6 +10,8 @@ provider "aws" {
 }
 
 variable "github_repo" { default = "nikmar0808/enterprise-integration-project" }
+variable "github_username" { default = "nikmar0808" }
+variable "github_repo-name" { default = "enterprise-integration-project" }
 
 resource "aws_iam_openid_connect_provider" "github" {
   url             = "https://token.actions.githubusercontent.com"
@@ -41,7 +43,13 @@ data "aws_iam_policy_document" "gha_trust" {
       # (e.g. infra/phase2-aws-deployment).
       values = [
         "repo:${var.github_repo}:ref:refs/heads/*",
-        "repo:nikmar0808@*/enterprise-integration-project@*:ref:refs/heads/*"
+        "repo:${var.github_username}@*/${var.github_repo-name}@*:ref:refs/heads/*"
+        # The pattern in the first line expects the OIDC token to look exactly like repo:nikmar0808/enterprise-integration-project:ref:refs/heads/...
+        # For security reasons (preventing name recycling), GitHub's New Immutable Subject Claims updated the token payload format for newer repositories.
+        # Instead of just passing repo:username/repo-name, it now includes immutable numerical internal IDs appended with an @ symbol.
+        # Because the AWS Trust Policy checks for repo:nikmar0808/enterprise-integration-project:*, we encounter "Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity" error. 
+        # Here's how the git output looks now
+        # Assuming role with OIDC, Authenticated as assumedRoleId AROAYTG35XHB3DFPPOLJJ:GitHubActions
       ]
     }
   }
