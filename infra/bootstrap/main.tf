@@ -1,5 +1,3 @@
-# OIDC-based IAM OIDC providers and roles for GitHub Actions and Terraform Cloud
-# 
 terraform {
   required_providers {
     aws = { source = "hashicorp/aws", version = "~> 6.0" }
@@ -16,7 +14,7 @@ variable "github_repo" { default = "nikmar0808/enterprise-integration-project" }
 resource "aws_iam_openid_connect_provider" "github" {
   url             = "https://token.actions.githubusercontent.com"
   client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"] # Github's OIDC thumbprint for token.actions.githubusercontent.com
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
 }
 
 data "aws_iam_policy_document" "gha_trust" {
@@ -35,10 +33,14 @@ data "aws_iam_policy_document" "gha_trust" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
+      # Matches a push from any branch of this repository — intentionally
+      # broad, to align with the docker-build-push-* jobs running on every
+      # push (not just develop/main) so the pipeline can be validated on a
+      # feature branch before merging. StringLike's "*" matches across "/"
+      # characters, so this also matches branch names containing slashes
+      # (e.g. infra/phase2-aws-deployment).
       values = [
-        # "repo:${var.github_repo}:ref:refs/heads/develop",
-        # "repo:${var.github_repo}:ref:refs/heads/main",
-        "repo:${var.github_repo}:ref:refs/heads/*"
+        "repo:${var.github_repo}:ref:refs/heads/*",
       ]
     }
   }
@@ -52,7 +54,7 @@ resource "aws_iam_role" "gha_deploy" {
 resource "aws_iam_openid_connect_provider" "tfc" {
   url             = "https://app.terraform.io"
   client_id_list  = ["aws.workload.identity"]
-  thumbprint_list = ["9e99a48a9960b14926bb7f3b02e22da2b0ab7280"] # Terraform Cloud's OIDC thumbprint for app.terraform.io
+  thumbprint_list = ["9e99a48a9960b14926bb7f3b02e22da2b0ab7280"]
 }
 
 data "aws_iam_policy_document" "tfc_trust" {

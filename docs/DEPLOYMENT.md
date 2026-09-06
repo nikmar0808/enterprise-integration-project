@@ -194,9 +194,14 @@ data "aws_iam_policy_document" "gha_trust" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
+      # Matches a push from any branch of this repository — intentionally
+      # broad, to align with the docker-build-push-* jobs running on every
+      # push (not just develop/main) so the pipeline can be validated on a
+      # feature branch before merging. StringLike's "*" matches across "/"
+      # characters, so this also matches branch names containing slashes
+      # (e.g. infra/phase2-aws-deployment).
       values = [
-        "repo:${var.github_repo}:ref:refs/heads/develop",
-        "repo:${var.github_repo}:ref:refs/heads/main",
+        "repo:${var.github_repo}:ref:refs/heads/*",
       ]
     }
   }
@@ -268,6 +273,8 @@ terraform apply
 ```
 
 **Expected result:** Terraform outputs `gha_deploy_role_arn` and `tfc_run_role_arn`. Record both values; they are required in step 1.2 and Phase 2.
+
+**Any future edit to this file — including changing the `sub` condition's branch pattern — has no effect on AWS until `terraform apply` is re-run inside `infra/bootstrap/` specifically, with credentials re-exported.** This is a separate root module with its own local state; editing the `.tf` file alone does nothing. Before assuming a trust-policy change didn't work, re-run `terraform plan` here first and confirm it actually shows a diff — if it reports no changes, the edit isn't being picked up, and the live AWS trust policy is unaffected regardless of what the file currently says. The definitive ground truth is always the AWS Console — IAM → Roles → `gha-deploy-role` → Trust relationships — not this file.
 
 ### 1.2 Terraform Cloud configuration
 
@@ -730,13 +737,26 @@ git push origin <branch-name>
 
 ### 2.9 Confirm the apply and record its outputs
 
-Pushing the commit above only queues a Terraform Cloud run — it does not, by itself, create anything in AWS. In the Terraform Cloud web interface, open the workspace and confirm:
+Pushing the commit above does **not** reliably queue a Terraform Cloud run — that depends entirely on the workspace's VCS connection actually being configured (Settings → Version Control should not show "Not Connected"; if it does, no push will ever trigger a run there, regardless of branch). It **will**, however, trigger this repository's `.github/workflows/ci.yml` if that file already exists on the pushed branch, since GitHub Actions triggers on every push matching `on: push: branches: ["**"]` regardless of which files actually changed — an infra-only commit still fires the full CI workflow. The two systems trigger independently of each other and of this document's phase numbering.
 
-1. A new run appears, triggered by this push, and its **plan** stage completes without errors.
-2. Unless the workspace has auto-apply enabled, the run pauses awaiting confirmation — click **Confirm & Apply** to actually provision the resources.
-3. The **apply** stage completes successfully. This takes several minutes, mainly waiting on the RDS instance to become available.
+Given that, apply this phase locally rather than depending on an automatic Terraform Cloud run:
 
-Once the apply succeeds, retrieve the `rds_endpoint` output from the workspace's **Outputs** tab in the Terraform Cloud UI (or, if applying locally instead, `terraform output -raw rds_endpoint` from `infra/`). **This value is required as the `RDS_ENDPOINT` GitHub Actions variable in Phase 3 — do not proceed to that step until it has been retrieved.**
+**The bootstrap IAM user needs the AWS-managed [`AdministratorAccess`](https://us-east-1.console.aws.amazon.com/iam/home?region=us-east-1#/policies/details/arn%3Aaws%3Aiam%3A%3Aaws%3Apolicy%2FAdministratorAccess) policy attached** for this apply to succeed — this phase creates resources across many services (EC2, RDS, IAM, API Gateway, SSM, ECR), and a hand-crafted narrower policy covering all of them is disproportionate effort for a one-time local bootstrap identity that never holds a standing access key (see Section 1.1's rationale for why that trade-off is acceptable here).
+
+```powershell
+cd infra
+aws login --profile terraform-admin
+aws sts get-caller-identity --profile terraform-admin
+$creds = aws configure export-credentials --profile terraform-admin --format process | ConvertFrom-Json
+$env:AWS_ACCESS_KEY_ID     = $creds.AccessKeyId
+$env:AWS_SECRET_ACCESS_KEY = $creds.SecretAccessKey
+$env:AWS_SESSION_TOKEN     = $creds.SessionToken
+terraform plan
+terraform apply
+terraform output -raw rds_endpoint
+```
+
+Record the `rds_endpoint` output. **This value is required as the `RDS_ENDPOINT` GitHub Actions variable in Phase 3 — do not proceed to that step until it has been retrieved.**
 
 ---
 
