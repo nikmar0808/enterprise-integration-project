@@ -120,7 +120,88 @@ This step establishes the OIDC trust relationships that all subsequent automatio
 
 **Procedure:**
 
-1. In the AWS Console, create an IAM user named `terraform-admin` (non-root). Attach the `SignInLocalDevelopmentAccess` managed policy (required for `aws login`), plus sufficient permissions to create IAM OIDC providers and roles.
+1. In the AWS Console, create an IAM user named `terraform-admin` (non-root). The following were confirmed necessary for this project's bootstrap and main-infrastructure applies to succeed — attach all four:
+
+   | Policy | Type | Purpose |
+   |---|---|---|
+   | `SignInLocalDevelopmentAccess` | AWS-managed | Required for `aws login` itself to function at all |
+   | `AdministratorAccess` | AWS-managed | Required for the main-infrastructure apply (Phase 2), which spans EC2, RDS, IAM, API Gateway, SSM, and ECR — see the rationale in that phase's apply-confirmation section for why a broad policy is an acceptable trade-off for this specific, session-based, no-standing-key identity |
+   | `AmazonSSMFullAccess` | AWS-managed | Technically redundant once `AdministratorAccess` is attached (it's a strict superset) — included for completeness; safe to omit |
+   | `Terraform-OIDC-Role-Management` (below) | Customer-managed inline policy | Scopes exactly what `infra/bootstrap/`'s apply needs — see note below |
+
+   `Terraform-OIDC-Role-Management`:
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Sid": "TerraformOidcAndRoleManagement",
+         "Effect": "Allow",
+         "Action": [
+           "iam:CreateOpenIDConnectProvider",
+           "iam:GetOpenIDConnectProvider",
+           "iam:DeleteOpenIDConnectProvider",
+           "iam:TagOpenIDConnectProvider",
+           "iam:UntagOpenIDConnectProvider",
+           "iam:CreateRole",
+           "iam:GetRole",
+           "iam:DeleteRole",
+           "iam:TagRole",
+           "iam:UntagRole",
+           "iam:PutRolePolicy",
+           "iam:DeleteRolePolicy",
+           "iam:GetRolePolicy",
+           "iam:AttachRolePolicy",
+           "iam:DetachRolePolicy",
+           "iam:ListInstanceProfilesForRole",
+           "iam:ListRolePolicies",
+           "iam:ListAttachedRolePolicies"
+         ],
+         "Resource": "*"
+       }
+     ]
+   }
+   ```
+
+   **On least privilege:** this inline policy already improves meaningfully on blanket `AdministratorAccess` on the *action* dimension — only IAM OIDC-provider and role-management actions, nothing touching EC2/RDS/API Gateway/etc. It can be tightened further on the *resource* dimension, since `iam:CreateRole` and the OIDC provider actions both support resource-level restriction:
+
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Sid": "TerraformOidcProviderManagement",
+         "Effect": "Allow",
+         "Action": [
+           "iam:CreateOpenIDConnectProvider", "iam:GetOpenIDConnectProvider",
+           "iam:DeleteOpenIDConnectProvider", "iam:TagOpenIDConnectProvider",
+           "iam:UntagOpenIDConnectProvider"
+         ],
+         "Resource": [
+           "arn:aws:iam::<AWS_ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com",
+           "arn:aws:iam::<AWS_ACCOUNT_ID>:oidc-provider/app.terraform.io"
+         ]
+       },
+       {
+         "Sid": "TerraformRoleManagement",
+         "Effect": "Allow",
+         "Action": [
+           "iam:CreateRole", "iam:GetRole", "iam:DeleteRole", "iam:TagRole",
+           "iam:UntagRole", "iam:PutRolePolicy", "iam:DeleteRolePolicy",
+           "iam:GetRolePolicy", "iam:AttachRolePolicy", "iam:DetachRolePolicy",
+           "iam:ListInstanceProfilesForRole", "iam:ListRolePolicies",
+           "iam:ListAttachedRolePolicies"
+         ],
+         "Resource": [
+           "arn:aws:iam::<AWS_ACCOUNT_ID>:role/gha-deploy-role",
+           "arn:aws:iam::<AWS_ACCOUNT_ID>:role/tfc-run-role"
+         ]
+       }
+     ]
+   }
+   ```
+
+   This tightened version is **not yet verified end to end** — it's a reasonable draft based on which resource types support ARN-level scoping, not a confirmed-working replacement. If adopting it, test it in isolation before relying on it, and keep the broader policy available to fall back on.
 
 2. Configure a named profile:
 
@@ -215,9 +296,22 @@ data "aws_iam_policy_document" "gha_trust" {
       # real failed AssumeRoleWithWebIdentity attempt's logged subject claim
       # if role assumption fails despite both patterns being present; that
       # reveals which format is actually in use.
+      #
+      # A second, separate distinction also matters: any job that declares
+      # `environment: production` (the deploy job) receives a sub claim
+      # shaped as repo:OWNER/REPO:environment:NAME — not repo:OWNER/REPO:ref:
+      # refs/heads/BRANCH — regardless of which branch triggered the run.
+      # Jobs without an environment: key (the build/push jobs) use the
+      # ref-based patterns above; the deploy job needs the environment-based
+      # patterns below instead, or it will fail OIDC even when the build/push
+      # jobs succeed.
       values = [
+        # Used by docker-build-push-* (regular push-triggered jobs, no environment: set)
         "repo:${var.github_repo}:ref:refs/heads/*",
         "repo:${var.github_username}@*/${var.github_repo_name}@*:ref:refs/heads/*",
+        # Used by deploy (environment: production)
+        "repo:${var.github_repo}:environment:production",
+        "repo:${var.github_username}@*/${var.github_repo_name}@*:environment:production",
       ]
     }
   }
@@ -477,21 +571,49 @@ data "aws_iam_policy_document" "gha_permissions" {
       "ecr:BatchCheckLayerAvailability", "ecr:InitiateLayerUpload",
       "ecr:UploadLayerPart", "ecr:CompleteLayerUpload",
       "ecr:PutImage", "ecr:BatchGetImage",
+      "ecr:DescribeImages", # required by ci.yml's idempotency check before each push
     ]
     resources = [aws_ecr_repository.java_gateway.arn, aws_ecr_repository.python_validator.arn]
   }
   statement {
-    sid     = "DeployViaSSM"
-    actions = ["ssm:SendCommand", "ssm:GetCommandInvocation"]
-    resources = [
-      "arn:aws:ec2:<AWS_REGION>:*:instance/*",
-      "arn:aws:ssm:<AWS_REGION>::document/AWS-RunShellScript",
-    ]
+    sid       = "SSMSendCommandDocument"
+    actions   = ["ssm:SendCommand"]
+    resources = ["arn:aws:ssm:<AWS_REGION>::document/AWS-RunShellScript"]
+    # No resourceTag condition here — SSM documents aren't taggable in the way
+    # EC2 instances are, and a real-world test found that combining an EC2
+    # instance ARN and an SSM document ARN under one ssm:resourceTag/Name
+    # condition in a single statement causes the whole statement to be denied
+    # (the document resource can't satisfy a condition scoped to instance
+    # tags). Splitting into separate statements — one per resource type, each
+    # with the condition that actually applies to it — fixes this without
+    # giving up the tag-based scoping on which instance can be targeted,
+    # unlike simply removing the condition entirely.
+  }
+  statement {
+    sid       = "SSMSendCommandTargetInstance"
+    actions   = ["ssm:SendCommand"]
+    resources = ["arn:aws:ec2:<AWS_REGION>:*:instance/*"]
     condition {
       test     = "StringEquals"
       variable = "ssm:resourceTag/Name"
       values   = ["<EC2_TAG_NAME>"]
     }
+  }
+  statement {
+    sid = "SSMTrackingAndInstanceLookup"
+    actions = [
+      "ssm:GetCommandInvocation",
+      # Required by the deploy job's status-polling loop, which resolves the
+      # target instance ID via `aws ec2 describe-instances` before checking
+      # command status — a real gap in the original policy, found only when
+      # the deploy job actually ran.
+      "ec2:DescribeInstances",
+    ]
+    # Both are describe/list-style read actions that AWS does not support
+    # restricting by specific resource ARN — "*" is the correct, and only
+    # valid, scope for these two actions specifically, not a broadening
+    # of intent.
+    resources = ["*"]
   }
 }
 
@@ -932,15 +1054,32 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@v4
         with: { role-to-assume: "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/gha-deploy-role", aws-region: "${{ env.AWS_REGION }}" }
       - uses: aws-actions/amazon-ecr-login@v2
-      - run: docker build -t $ECR_REGISTRY/eai-java-gateway:${{ github.sha }} ./01-java-ingestion-service
-      - uses: aquasecurity/trivy-action@0.35.0
+      # ECR repositories are IMMUTABLE — re-pushing an already-existing tag
+      # fails outright rather than being silently ignored. Since the same
+      # commit SHA can legitimately reach this workflow twice (e.g. a
+      # fast-forward merge between develop and main, or a manual re-run),
+      # this check makes the job idempotent instead of erroring in that case.
+      - name: Check whether this commit's image already exists
+        id: check-image
+        run: |
+          if aws ecr describe-images --repository-name eai-java-gateway --image-ids imageTag=${{ github.sha }} --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+            echo "Image already exists for this commit — skipping rebuild and push."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.check-image.outputs.skip == 'false'
+        run: docker build -t $ECR_REGISTRY/eai-java-gateway:${{ github.sha }} ./01-java-ingestion-service
+      - if: steps.check-image.outputs.skip == 'false'
+        uses: aquasecurity/trivy-action@0.35.0
         # Temporarily bypassing this gate by setting exit-code: 0 — see the
         # note in the Status Tracking / equivalent section of this project's
         # execution notes. Revert to exit-code: 1 (the line below, currently
         # commented out) once findings from this scan have been triaged.
         # with: { image-ref: "${{ env.ECR_REGISTRY }}/eai-java-gateway:${{ github.sha }}", severity: "CRITICAL,HIGH", exit-code: 1 }
         with: { image-ref: "${{ env.ECR_REGISTRY }}/eai-java-gateway:${{ github.sha }}", severity: "CRITICAL,HIGH", exit-code: 0 }
-      - run: docker push $ECR_REGISTRY/eai-java-gateway:${{ github.sha }}
+      - if: steps.check-image.outputs.skip == 'false'
+        run: docker push $ECR_REGISTRY/eai-java-gateway:${{ github.sha }}
 
   docker-build-push-python:
     needs: python-build-test
@@ -952,15 +1091,27 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@v4
         with: { role-to-assume: "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/gha-deploy-role", aws-region: "${{ env.AWS_REGION }}" }
       - uses: aws-actions/amazon-ecr-login@v2
-      - run: docker build -t $ECR_REGISTRY/eai-python-validator:${{ github.sha }} ./02-python-transformation-api
-      - uses: aquasecurity/trivy-action@0.35.0
+      - name: Check whether this commit's image already exists
+        id: check-image
+        run: |
+          if aws ecr describe-images --repository-name eai-python-validator --image-ids imageTag=${{ github.sha }} --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+            echo "Image already exists for this commit — skipping rebuild and push."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.check-image.outputs.skip == 'false'
+        run: docker build -t $ECR_REGISTRY/eai-python-validator:${{ github.sha }} ./02-python-transformation-api
+      - if: steps.check-image.outputs.skip == 'false'
+        uses: aquasecurity/trivy-action@0.35.0
         # Temporarily bypassing this gate by setting exit-code: 0 — see the
         # note in the Status Tracking / equivalent section of this project's
         # execution notes. Revert to exit-code: 1 (the line below, currently
         # commented out) once findings from this scan have been triaged.
         # with: { image-ref: "${{ env.ECR_REGISTRY }}/eai-python-validator:${{ github.sha }}", severity: "CRITICAL,HIGH", exit-code: 1 }
         with: { image-ref: "${{ env.ECR_REGISTRY }}/eai-python-validator:${{ github.sha }}", severity: "CRITICAL,HIGH", exit-code: 0 }
-      - run: docker push $ECR_REGISTRY/eai-python-validator:${{ github.sha }}
+      - if: steps.check-image.outputs.skip == 'false'
+        run: docker push $ECR_REGISTRY/eai-python-validator:${{ github.sha }}
 
   deploy:
     needs: [docker-build-push-java, docker-build-push-python]
@@ -1028,6 +1179,8 @@ git push origin <branch-name>
 
 ## Phase 4 — Initial Deployment and Verification
 
+**Merge into `main` with `--no-ff`, not a plain merge.** A plain `git merge develop` while `main` has no divergent commits fast-forwards `main` to the exact same commit SHA as `develop`. Since ECR tags are immutable and images are tagged by `github.sha`, this means both branches point at a commit whose image was already built and pushed once — a subsequent workflow run for that identical SHA will now be silently skipped by the idempotency check in Phase 3, rather than failing, but forcing a genuinely new commit on `main` via `--no-ff` is still the cleaner practice: it keeps branch history distinct and avoids relying on the skip behavior as the only thing preventing a failure.
+
 ```bash
 # Run from: <repo-root>
 git checkout develop
@@ -1036,7 +1189,7 @@ git push origin develop
 
 git checkout main
 git pull origin main
-git merge develop
+git merge --no-ff develop -m "merge: promote develop to main"
 git push origin main
 ```
 ```powershell
@@ -1047,7 +1200,7 @@ git push origin develop
 
 git checkout main
 git pull origin main
-git merge develop
+git merge --no-ff develop -m "merge: promote develop to main"
 git push origin main
 ```
 
@@ -1055,12 +1208,34 @@ Approve the `production` environment gate in the repository's Actions tab when p
 
 **Verification, without SSH:**
 
+The AWS Session Manager plugin must be installed locally for `aws ssm start-session` to work — check before proceeding:
+```bash
+session-manager-plugin --version
+```
+```powershell
+# PowerShell equivalent
+session-manager-plugin --version
+```
+If this errors, install it from AWS's official download page, then restart the shell.
+
+Credentials from Phase 1 are session-based and may have expired by the time verification happens — re-authenticate first:
+```bash
+# Run from: anywhere
+aws login --profile terraform-admin
+aws sts get-caller-identity --profile terraform-admin
+```
+```powershell
+# PowerShell equivalent — run from: anywhere
+aws login --profile terraform-admin
+aws sts get-caller-identity --profile terraform-admin
+```
+
 ```bash
 # Run from: anywhere with AWS CLI configured against the target account
-aws ssm start-session --target $(aws ec2 describe-instances \
+aws ssm start-session --region <AWS_REGION> --target $(aws ec2 describe-instances \
   --filters "Name=tag:Name,Values=<EC2_TAG_NAME>" "Name=instance-state-name,Values=running" \
   --query "Reservations[0].Instances[0].InstanceId" --output text)
-docker compose -f /opt/eai/docker-compose.prod.yml ps
+# Inside the session: sudo docker-compose -f /opt/eai/docker-compose.prod.yml --env-file /opt/eai/.env ps
 exit
 
 # Run from: <repo-root>/infra
@@ -1070,14 +1245,19 @@ curl $API_URL/health
 ```
 ```powershell
 # PowerShell equivalent
-$instanceId = aws ec2 describe-instances --filters "Name=tag:Name,Values=<EC2_TAG_NAME>" "Name=instance-state-name,Values=running" --query "Reservations[0].Instances[0].InstanceId" --output text
-aws ssm start-session --target $instanceId
-# Inside the session: docker compose -f /opt/eai/docker-compose.prod.yml ps
+$instanceId = aws ec2 describe-instances --region <AWS_REGION> --filters "Name=tag:Name,Values=<EC2_TAG_NAME>" "Name=instance-state-name,Values=running" --query "Reservations[0].Instances[0].InstanceId" --output text
+aws ssm start-session --region <AWS_REGION> --target $instanceId
+# Inside the session: sudo docker-compose -f /opt/eai/docker-compose.prod.yml --env-file /opt/eai/.env ps
 exit
 
 cd infra
 $apiUrl = terraform output -raw api_gateway_url
 Invoke-RestMethod -Uri "$apiUrl/health"
+```
+
+Three points worth knowing before running this: `--env-file /opt/eai/.env` is required even for `ps`, not just `up` — the compose file interpolates variables like `${ECR_REGISTRY}` at parse time, and without it `docker-compose` cannot fully read the file. `sudo` is required because the SSM session's shell user is not in the `docker` group by default. `--region` is passed explicitly to both AWS CLI calls rather than relying on an implicit default region.
+
+**Expected result:** `docker-compose ps` shows both containers `Up`; the health check returns `{"status":"UP"}`.
 ```
 
 **Expected result:** the `docker compose ps` output shows both services as `running`; the `curl`/`Invoke-RestMethod` call against the API Gateway URL returns `{"status":"UP"}`.
