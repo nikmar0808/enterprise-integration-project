@@ -109,12 +109,29 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@v4
         with: { role-to-assume: "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/gha-deploy-role", aws-region: "${{ env.AWS_REGION }}" }
       - uses: aws-actions/amazon-ecr-login@v2
-      - run: docker build -t $ECR_REGISTRY/eai-java-gateway:${{ github.sha }} ./01-java-ingestion-service
-      - uses: aquasecurity/trivy-action@0.35.0
+      # ECR repositories are IMMUTABLE — re-pushing an already-existing tag
+      # fails outright rather than being silently ignored. Since the same
+      # commit SHA can legitimately reach this workflow twice (e.g. a
+      # fast-forward merge between develop and main, or a manual re-run),
+      # this check makes the job idempotent instead of erroring in that case.
+      - name: Check whether this commit's image already exists
+        id: check-image
+        run: |
+          if aws ecr describe-images --repository-name eai-java-gateway --image-ids imageTag=${{ github.sha }} --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+            echo "Image already exists for this commit — skipping rebuild and push."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.check-image.outputs.skip == 'false'
+        run: docker build -t $ECR_REGISTRY/eai-java-gateway:${{ github.sha }} ./01-java-ingestion-service
+      - if: steps.check-image.outputs.skip == 'false'
+        uses: aquasecurity/trivy-action@0.35.0
         # bypassing this temporarily by setting exit-code = 0
         # with: { image-ref: "${{ env.ECR_REGISTRY }}/eai-java-gateway:${{ github.sha }}", severity: "CRITICAL,HIGH", exit-code: 1 }
         with: { image-ref: "${{ env.ECR_REGISTRY }}/eai-java-gateway:${{ github.sha }}", severity: "CRITICAL,HIGH", exit-code: 0 }
-      - run: docker push $ECR_REGISTRY/eai-java-gateway:${{ github.sha }}
+      - if: steps.check-image.outputs.skip == 'false'
+        run: docker push $ECR_REGISTRY/eai-java-gateway:${{ github.sha }}
 
   docker-build-push-python:
     needs: python-build-test
@@ -126,12 +143,24 @@ jobs:
       - uses: aws-actions/configure-aws-credentials@v4
         with: { role-to-assume: "arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/gha-deploy-role", aws-region: "${{ env.AWS_REGION }}" }
       - uses: aws-actions/amazon-ecr-login@v2
-      - run: docker build -t $ECR_REGISTRY/eai-python-validator:${{ github.sha }} ./02-python-transformation-api
-      - uses: aquasecurity/trivy-action@0.35.0
+      - name: Check whether this commit's image already exists
+        id: check-image
+        run: |
+          if aws ecr describe-images --repository-name eai-python-validator --image-ids imageTag=${{ github.sha }} --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+            echo "Image already exists for this commit — skipping rebuild and push."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.check-image.outputs.skip == 'false'
+        run: docker build -t $ECR_REGISTRY/eai-python-validator:${{ github.sha }} ./02-python-transformation-api
+      - if: steps.check-image.outputs.skip == 'false'
+        uses: aquasecurity/trivy-action@0.35.0
         # bypassing this temporarily by setting exit-code = 0
         # with: { image-ref: "${{ env.ECR_REGISTRY }}/eai-python-validator:${{ github.sha }}", severity: "CRITICAL,HIGH", exit-code: 1 }
         with: { image-ref: "${{ env.ECR_REGISTRY }}/eai-python-validator:${{ github.sha }}", severity: "CRITICAL,HIGH", exit-code: 0 }
-      - run: docker push $ECR_REGISTRY/eai-python-validator:${{ github.sha }}
+      - if: steps.check-image.outputs.skip == 'false'
+        run: docker push $ECR_REGISTRY/eai-python-validator:${{ github.sha }}
 
   deploy:
     needs: [docker-build-push-java, docker-build-push-python]

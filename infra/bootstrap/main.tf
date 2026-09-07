@@ -60,13 +60,22 @@ data "aws_iam_policy_document" "gha_trust" {
       # Keeping both patterns (rather than replacing format 1 outright) costs
       # nothing here and keeps this configuration portable to older,
       # non-immutable repositories if it's ever reused elsewhere.
+      #
+      # A second, separate distinction also matters here: jobs that declare
+      # `environment: production` (the deploy job) get a sub claim shaped
+      # differently from a plain branch push — repo:OWNER/REPO:environment:
+      # NAME, not repo:OWNER/REPO:ref:refs/heads/BRANCH — regardless of which
+      # branch triggered the run. The build/push jobs (no environment: set)
+      # matched the ref-based patterns above and worked; the deploy job kept
+      # failing OIDC until the environment-based patterns below were added,
+      # for exactly this reason.
       values = [
-        # Following two lines are used during docker-build-push phases
+        # Used by docker-build-push-* (regular push-triggered jobs, no environment: set)
         "repo:${var.github_repo}:ref:refs/heads/*",
         "repo:${var.github_username}@*/${var.github_repo_name}@*:ref:refs/heads/*",
-        # Following two lines are used during production deploy phase
+        # Used by deploy (environment: production)
         "repo:${var.github_repo}:environment:production",
-        "repo:${var.github_username}@*/${var.github_repo_name}@*:environment:production"
+        "repo:${var.github_username}@*/${var.github_repo_name}@*:environment:production",
       ]
     }
   }
