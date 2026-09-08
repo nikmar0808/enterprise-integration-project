@@ -11,6 +11,7 @@ data "aws_iam_policy_document" "gha_permissions" {
       "ecr:UploadLayerPart", "ecr:CompleteLayerUpload",
       "ecr:PutImage", "ecr:BatchGetImage",
       "ecr:DescribeImages", # required by ci.yml's idempotency check before each push
+      "ecr:GetDownloadUrlForLayer" # suggested by AWS docs for ECR push permissions
     ]
     resources = [aws_ecr_repository.java_gateway.arn, aws_ecr_repository.python_validator.arn]
   }
