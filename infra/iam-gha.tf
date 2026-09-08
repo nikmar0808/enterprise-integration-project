@@ -11,7 +11,7 @@ data "aws_iam_policy_document" "gha_permissions" {
       "ecr:UploadLayerPart", "ecr:CompleteLayerUpload",
       "ecr:PutImage", "ecr:BatchGetImage",
       "ecr:DescribeImages", # required by ci.yml's idempotency check before each push
-      "ecr:GetDownloadUrlForLayer" # suggested by AWS docs for ECR push permissions
+      "ecr:GetDownloadUrlForLayer" # suggested by AWS docs for ECR push permissions, though not actually used in our workflow
     ]
     resources = [aws_ecr_repository.java_gateway.arn, aws_ecr_repository.python_validator.arn]
   }
@@ -59,7 +59,6 @@ data "aws_iam_policy_document" "gha_permissions" {
 
 resource "aws_iam_role_policy" "gha_deploy" {
   name   = "gha-deploy-permissions"
-  # role   = "gha-deploy-role" # This only works if gha-deploy-role already exists in AWS outside of this Terraform configuration. If the role is also defined in Terraform, this string reference won't create the attachment properly.
-  role = aws_iam_role.gha_deploy_role.id  # ✅ Reference the actual role resource
+  role   = "gha-deploy-role"
   policy = data.aws_iam_policy_document.gha_permissions.json
 }
