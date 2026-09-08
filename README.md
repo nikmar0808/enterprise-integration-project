@@ -98,6 +98,27 @@ Invoke-RestMethod -Uri http://localhost:8081/api/v1/ingest/bulk -Method Post -Co
   -Body '{"meter_id":"MTR-000123","grid_zone":"ZONE-A","readings":[{"timestamp":"2026-01-01T00:00:00Z","kwh_value":12.5}]}'
 ```
 
+## Testing the deployment
+
+Once deployed to AWS (see [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)), the same ingestion endpoint is reached through the API Gateway URL rather than `localhost`.
+
+Single reading:
+```powershell
+# Run from: <REPO_NAME>/infra
+cd infra
+$apiUrl = terraform output -raw api_gateway_url
+Invoke-RestMethod -Uri "$apiUrl/api/v1/ingest/bulk" -Method Post -ContentType "application/json" -Body '{"meter_id":"MTR-000123","grid_zone":"ZONE-A","readings":[{"timestamp":"2026-01-01T00:00:00Z","kwh_value":12.5}]}'
+```
+
+Bulk readings, via the included test script:
+```powershell
+# Run from: <REPO_NAME>/infra
+cd infra
+python ..\test\stream_telemetry.py
+```
+
+To confirm data actually landed in the database (the RDS instance has no public access by design), see `docs/DEPLOYMENT.md`'s testing section for the SSM-based `psql` walkthrough.
+
 ## Repository status
 
 | Area | Status |
@@ -106,7 +127,15 @@ Invoke-RestMethod -Uri http://localhost:8081/api/v1/ingest/bulk -Method Post -Co
 | Git hygiene, container hardening (multi-stage, non-root, healthchecks) | Implemented |
 | Identity/access bootstrap, AWS provisioning, CI/CD, deployment | See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) |
 
+## Roadmap
+
+Three items are tracked ahead of the next release:
+
+1. **Revert the temporary vulnerability-scan bypass.** Both `docker-build-push-*` jobs in `ci.yml` currently run Trivy image scans with `exit-code: 0`, so CRITICAL/HIGH findings are logged but do not fail the build — a deliberate, temporary trade-off made during pipeline debugging. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)'s CI/CD phase for the exact lines to revert and the triage process to follow once re-enabled.
+2. **Environment separation for `develop` and `main`.** Both branches currently build, scan, and push images, but only `main` reaches a deployed AWS environment — there is no separate `develop`/staging environment, and `develop` is verified through CI checks alone. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)'s Excluded Scope section for the environment-per-branch pattern this would require, and why it isn't implemented yet.
+3. **Replace the API Gateway `HTTP_PROXY` integration with a VPC Link and Network Load Balancer.** The current integration adds routing, throttling, and logging on top of the ingestion service, but does not remove its public IP exposure — a VPC Link would let the EC2 instance become fully private, reachable only through API Gateway. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)'s Excluded Scope section for why this is the direct successor to the current integration rather than a redesign.
+
 ## Documentation
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — design principles, audit findings that shaped the design, and the identity/security model
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — design principles, key architecture decisions, and the identity/security model
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — instructions to deploy this project to an independent AWS account
