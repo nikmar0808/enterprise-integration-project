@@ -59,6 +59,7 @@ data "aws_iam_policy_document" "gha_permissions" {
 
 resource "aws_iam_role_policy" "gha_deploy" {
   name   = "gha-deploy-permissions"
-  role   = "gha-deploy-role"
+  # role   = "gha-deploy-role" # This only works if gha-deploy-role already exists in AWS outside of this Terraform configuration. If the role is also defined in Terraform, this string reference won't create the attachment properly.
+  role = aws_iam_role.gha_deploy_role.id  # ✅ Reference the actual role resource
   policy = data.aws_iam_policy_document.gha_permissions.json
 }
