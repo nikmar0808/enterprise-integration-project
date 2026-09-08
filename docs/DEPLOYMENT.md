@@ -32,9 +32,9 @@ Every command block below uses the placeholders in this table. Replace all occur
 
 ## Phase 0 — Local Development Verification
 
-This step confirms the application layer works correctly, independently of any AWS resource, before proceeding to cloud deployment. `docker-compose.dev.yml` already exists in the cloned repository (created as part of the project's container-hardening work); it is shown here in full for reference and to confirm its role before the production-only `infra/docker-compose.prod.yml` is introduced in Phase 3.
+This step confirms the application layer works correctly, independently of any AWS resource, before proceeding to cloud deployment. `docker-compose.dev.yml` requires no changes — it is shown here in full for reference, and to confirm its role before the production-only `infra/docker-compose.prod.yml` is introduced in Phase 3.
 
-**Existing file — no changes required:** `docker-compose.dev.yml` (repository root).
+**File to edit (not create):** `docker-compose.dev.yml` (repository root) — shown for reference only; no changes required here.
 
 ```yaml
 networks:
@@ -388,12 +388,9 @@ terraform apply
 
 ### 1.2 Terraform Cloud configuration
 
-In the Terraform Cloud web interface, workspace `<TFC_WORKSPACE>` (organization `<TFC_ORG>`) → Variables → add as **workspace environment variables** (not marked sensitive; they contain no secret material):
+In the Terraform Cloud web interface, workspace `<TFC_WORKSPACE>` (organization `<TFC_ORG>`) → Settings → General → **Execution Mode → Local** — save this setting. This is what makes every `terraform apply` in this guide run directly from your own machine, using the `aws login` credentials from Step 1.1, with Terraform Cloud used purely as the remote state backend. This is a one-time setting, not a per-apply toggle.
 
-| Key | Value |
-|---|---|
-| `TFC_AWS_PROVIDER_AUTH` | `true` |
-| `TFC_AWS_RUN_ROLE_ARN` | `<tfc_run_role_arn from step 1.1>` |
+*Not used by this guide, documented for awareness only:* Terraform Cloud also supports connecting a workspace to a GitHub repository (VCS integration) so that a push automatically triggers a remote plan/apply, authenticated via OIDC dynamic credentials rather than local execution. This project's verified, working setup does not use that path — every resource here was created via local execution as described above. If pursuing VCS integration later, see Appendix A.1 in `ARCHITECTURE.md` for the underlying mechanism.
 
 ### 1.3 Provider configuration
 
@@ -403,9 +400,9 @@ The AWS provider block lives in `infra/eai-project.tf`, alongside the rest of th
 
 ## Phase 2 — AWS Resource Provisioning
 
-This phase is executed through Terraform Cloud (recommended: connect the workspace to the GitHub repository under Workspace → Settings → Version Control, so a push touching `infra/` triggers a plan/apply automatically) or locally via `aws login` with the workspace's execution mode temporarily set to "Local."
+This phase is executed locally, using the same `aws login` credentials and execution pattern established in Phase 1.1 — see Phase 1.2 for the one-time Terraform Cloud setting that makes this work.
 
-**Existing file — edit, do not recreate:** `infra/main.tf` (at the `infra/` root, not `infra/bootstrap/main.tf` from Phase 1 — the two are separate files with separate purposes; see the comparison table in Section 1.1). This file defines the Terraform Cloud backend and required providers for the main configuration. It already exists in the cloned repository; only the two highlighted values need to change to point at your own Terraform Cloud organization and workspace.
+**File to edit (not create):** `infra/main.tf`, at the `infra/` root — not `infra/bootstrap/main.tf` from Phase 1; the two are separate files with separate purposes, compared in Section 1.1's table. This file already defines the Terraform Cloud backend and required providers; only the two highlighted values below need to change to point at your own Terraform Cloud organization and workspace.
 
 ```hcl
 terraform {
@@ -426,7 +423,7 @@ terraform {
 }
 ```
 
-`networking.tf`, `ecr.tf`, `rds.tf`, `iam-gha.tf`, `iam-ec2.tf`, and `api-gateway.tf` are new files, created fresh in this phase. `infra/eai-project.tf` (Section 2.6) is the one exception: it already exists in the cloned repository, containing the VPC and first subnet that the new resources in this phase depend on, so it is shown here in full — incorporating this phase's changes — rather than as a diff.
+`networking.tf`, `ecr.tf`, `rds.tf`, `iam-gha.tf`, `iam-ec2.tf`, and `api-gateway.tf` are new files — create each one, with the exact content shown below. `infra/eai-project.tf` (Section 2.6) is the one file to edit rather than create: it already contains the VPC and first subnet that the new resources in this phase depend on, so it is shown here in full — incorporating this phase's changes — rather than as a diff.
 
 ### 2.1 Second subnet
 
@@ -580,7 +577,7 @@ data "aws_iam_policy_document" "gha_permissions" {
     actions   = ["ssm:SendCommand"]
     resources = ["arn:aws:ssm:<AWS_REGION>::document/AWS-RunShellScript"]
     # No resourceTag condition here — SSM documents aren't taggable in the way
-    # EC2 instances are, and a real-world test found that combining an EC2
+    # EC2 instances are. Combining an EC2
     # instance ARN and an SSM document ARN under one ssm:resourceTag/Name
     # condition in a single statement causes the whole statement to be denied
     # (the document resource can't satisfy a condition scoped to instance
@@ -605,8 +602,7 @@ data "aws_iam_policy_document" "gha_permissions" {
       "ssm:GetCommandInvocation",
       # Required by the deploy job's status-polling loop, which resolves the
       # target instance ID via `aws ec2 describe-instances` before checking
-      # command status — a real gap in the original policy, found only when
-      # the deploy job actually ran.
+      # command status.
       "ec2:DescribeInstances",
     ]
     # Both are describe/list-style read actions that AWS does not support
@@ -686,7 +682,7 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 
 ### 2.6 Complete `infra/eai-project.tf`
 
-This file already exists in the cloned repository, containing the VPC, the first subnet, and the compute instance. The listing below is the **complete file after this phase's changes** — shown in full, rather than as a diff, so there is no ambiguity about what surrounding content to preserve. Three changes are called out inline: the provider block no longer references a profile or SSO login, the SSH ingress rule and key pair are removed in favor of SSM, and the instance gains an IAM instance profile.
+**File to edit (not create):** `infra/eai-project.tf` already contains the VPC, the first subnet, and the compute instance. The listing below is the complete file, shown in full rather than as a diff so there is no ambiguity about what to preserve.
 
 ```hcl
 provider "aws" {
@@ -744,12 +740,12 @@ resource "aws_route_table_association" "public_rt_assoc" {
 
 resource "aws_security_group" "app_sg" {
   name        = "eai-app-sg"
-  description = "Ingestion gateway public; internal service internal-only; SSH removed in favor of SSM"
+  description = "Ingestion gateway public; internal service internal-only; no SSH"
   vpc_id      = aws_vpc.enterprise_network.id
 
-  # Port 22 removed from the baseline configuration. SSM Session Manager,
-  # via the instance profile below, provides shell access over the AWS API
-  # using IAM credentials — no inbound SSH port or key pair is required.
+  # No SSH ingress rule — SSM Session Manager (via the instance profile
+  # below) provides shell access over the AWS API using IAM credentials, so
+  # no inbound port or key pair is needed.
 
   ingress {
     description = "Ingestion gateway"
@@ -759,8 +755,8 @@ resource "aws_security_group" "app_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Port 8082 (transformation service) intentionally not opened — it is
-  # reached only by the ingestion service over the internal Docker network.
+  # Port 8082 (transformation service) is not opened — it is reached only by
+  # the ingestion service over the internal Docker network.
 
   egress {
     description = "Allow all outbound (Docker image pulls, package updates, AWS API calls)"
@@ -783,16 +779,12 @@ data "aws_ami" "amazon_linux" {
   }
 }
 
-# The aws_key_pair resource from the baseline configuration is removed
-# entirely — no SSH key pair is required once SSM replaces SSH access.
-
 resource "aws_instance" "sandbox-1" {
   ami                    = data.aws_ami.amazon_linux.id
   instance_type          = "t3.micro"
   subnet_id              = aws_subnet.subnet-1.id
   vpc_security_group_ids = [aws_security_group.app_sg.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
-  # key_name removed — see note above.
 
   user_data = <<-EOF
     #!/bin/bash
@@ -856,7 +848,7 @@ output "api_gateway_url" { value = aws_apigatewayv2_api.eai_http_api.api_endpoin
 
 ### 2.8 Commit and apply
 
-`infra/main.tf` already exists in the cloned repository and needs only its Terraform Cloud organization and workspace values updated (Section 2.1) — it is not a new file. It is still included in the commit below because Terraform cannot apply successfully without the backend configuration and at least one resource file both being present together.
+`infra/main.tf` needs only its Terraform Cloud organization and workspace values updated (Section 2.1) — it is not a new file, and no other part of it changes. It is still included in the commit below because Terraform cannot apply successfully without the backend configuration and at least one resource file both being present together.
 
 ```bash
 # Run from: <repo-root>/infra
@@ -1223,11 +1215,20 @@ Credentials from Phase 1 are session-based and may have expired by the time veri
 # Run from: anywhere
 aws login --profile terraform-admin
 aws sts get-caller-identity --profile terraform-admin
+eval $(aws configure export-credentials --profile terraform-admin --format env)
+terraform plan
+terraform apply
 ```
 ```powershell
 # PowerShell equivalent — run from: anywhere
 aws login --profile terraform-admin
 aws sts get-caller-identity --profile terraform-admin
+$creds = aws configure export-credentials --profile terraform-admin --format process | ConvertFrom-Json
+$env:AWS_ACCESS_KEY_ID     = $creds.AccessKeyId
+$env:AWS_SECRET_ACCESS_KEY = $creds.SecretAccessKey
+$env:AWS_SESSION_TOKEN     = $creds.SessionToken
+terraform plan
+terraform apply
 ```
 
 ```bash
@@ -1258,6 +1259,88 @@ Invoke-RestMethod -Uri "$apiUrl/health"
 Three points worth knowing before running this: `--env-file /opt/eai/.env` is required even for `ps`, not just `up` — the compose file interpolates variables like `${ECR_REGISTRY}` at parse time, and without it `docker-compose` cannot fully read the file. `sudo` is required because the SSM session's shell user is not in the `docker` group by default. `--region` is passed explicitly to both AWS CLI calls rather than relying on an implicit default region.
 
 **Expected result:** `docker-compose ps` shows both containers `Up`; the health check returns `{"status":"UP"}`.
+
+---
+
+## Testing the deployment
+
+### Sending sample data
+
+Single reading, through API Gateway:
+```bash
+# Run from: <repo-root>/infra
+cd infra
+API_URL=$(terraform output -raw api_gateway_url)
+curl -X POST "$API_URL/api/v1/ingest/bulk" \
+  -H "Content-Type: application/json" \
+  -d '{"meter_id":"MTR-000123","grid_zone":"ZONE-A","readings":[{"timestamp":"2026-01-01T00:00:00Z","kwh_value":12.5}]}'
+```
+```powershell
+# PowerShell equivalent — run from: <repo-root>\infra
+cd infra
+$apiUrl = terraform output -raw api_gateway_url
+Invoke-RestMethod -Uri "$apiUrl/api/v1/ingest/bulk" -Method Post -ContentType "application/json" -Body '{"meter_id":"MTR-000123","grid_zone":"ZONE-A","readings":[{"timestamp":"2026-01-01T00:00:00Z","kwh_value":12.5}]}'
 ```
 
-**Expected result:** the `docker compose ps` output shows both services as `running`; the `curl`/`Invoke-RestMethod` call against the API Gateway URL returns `{"status":"UP"}`.
+Bulk readings, using the included test script (`test/stream_telemetry.py`):
+```bash
+# Run from: <repo-root>/infra
+python ../test/stream_telemetry.py
+```
+```powershell
+# PowerShell equivalent — run from: <repo-root>\infra
+python ..\test\stream_telemetry.py
+```
+
+**Expected result:** a JSON response containing `message`, `metadata`, and `analytics_summary` — this is the transformation service's response shape, passed straight through by the ingestion gateway.
+
+### Confirming data reached the database
+
+The RDS instance has no public access by design — `publicly_accessible = false` keeps it off the public internet entirely, and `db_sg`'s ingress rule restricts port 5432 to traffic from `app_sg` only (Section 2.3). There is no firewall rule to open for local access; instead, a `psql` session is run *from* the EC2 instance itself, reached the same way as the rest of this guide — SSM, not SSH.
+
+```bash
+# Run from: <repo-root>/infra
+cd infra
+aws login --profile terraform-admin
+aws sts get-caller-identity --profile terraform-admin
+eval $(aws configure export-credentials --profile terraform-admin --format env)
+RDS_ENDPOINT=$(terraform output -raw rds_endpoint)
+echo $RDS_ENDPOINT
+
+aws ssm start-session --region <AWS_REGION> --target $(aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=<EC2_TAG_NAME>" "Name=instance-state-name,Values=running" \
+  --query "Reservations[0].Instances[0].InstanceId" --output text)
+```
+```powershell
+# PowerShell equivalent — run from: <repo-root>\infra
+cd infra
+aws login --profile terraform-admin
+aws sts get-caller-identity --profile terraform-admin
+$creds = aws configure export-credentials --profile terraform-admin --format process | ConvertFrom-Json
+$env:AWS_ACCESS_KEY_ID     = $creds.AccessKeyId
+$env:AWS_SECRET_ACCESS_KEY = $creds.SecretAccessKey
+$env:AWS_SESSION_TOKEN     = $creds.SessionToken
+$rdsEndpoint = terraform output -raw rds_endpoint
+$rdsEndpoint
+
+$instanceId = aws ec2 describe-instances --region <AWS_REGION> --filters "Name=tag:Name,Values=<EC2_TAG_NAME>" "Name=instance-state-name,Values=running" --query "Reservations[0].Instances[0].InstanceId" --output text
+aws ssm start-session --region <AWS_REGION> --target $instanceId
+```
+
+The session's prompt changes from PowerShell to a Linux shell once connected. From inside that session:
+
+```bash
+RDS_ENDPOINT=<paste the value printed above>
+RDS_PASSWORD=$(aws ssm get-parameter --region <AWS_REGION> --name "/eai-project/rds/master_password" --with-decryption --query "Parameter.Value" --output text)
+
+# If psql is not already installed on the instance:
+sudo dnf install -y postgresql16
+
+PGPASSWORD="$RDS_PASSWORD" psql -h "$RDS_ENDPOINT" -U smart_meter_admin -d smart_meter_warehouse \
+  -c "SELECT * FROM smart_meter_intervals WHERE meter_id = 'MTR-000123';"
+
+# List all tables:
+PGPASSWORD="$RDS_PASSWORD" psql -h "$RDS_ENDPOINT" -U smart_meter_admin -d smart_meter_warehouse -c "\dt *.*"
+```
+
+**Expected result:** a row for `MTR-000123` with `kwh_value = 12.5`, matching whatever sample payload was sent above.
