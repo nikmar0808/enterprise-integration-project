@@ -189,7 +189,7 @@ jobs:
               \"cd /opt/eai && ECR_REGISTRY=${{ env.ECR_REGISTRY }} IMAGE_TAG=${{ github.sha }} docker-compose -f docker-compose.prod.yml --env-file .env up -d\"
             ]" \
             --query "Command.CommandId" --output text)
-
+          echo "SSM Command ID: $COMMAND_ID"
           for i in $(seq 1 20); do
             STATUS=$(aws ssm get-command-invocation \
               --command-id "$COMMAND_ID" \
