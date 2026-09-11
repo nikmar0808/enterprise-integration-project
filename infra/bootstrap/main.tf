@@ -9,9 +9,9 @@ provider "aws" {
   region = "ap-south-1"
 }
 
-variable "github_repo" { default = "nikmar0808/enterprise-integration-project" }
+variable "github_repo" { default = "nikmar0808/enterprise-integration-aws" }
 variable "github_username" { default = "nikmar0808" }
-variable "github_repo_name" { default = "enterprise-integration-project" }
+variable "github_repo_name" { default = "enterprise-integration-aws" }
 
 resource "aws_iam_openid_connect_provider" "github" {
   url             = "https://token.actions.githubusercontent.com"
@@ -108,7 +108,7 @@ data "aws_iam_policy_document" "tfc_trust" {
     condition {
       test     = "StringLike"
       variable = "app.terraform.io:sub"
-      values   = ["organization:MyOtg:project:*:workspace:eai-project-infra:run_phase:*"]
+      values   = ["organization:MyOtg:project:*:workspace:eai-aws-prod:run_phase:*"]
     }
   }
 }

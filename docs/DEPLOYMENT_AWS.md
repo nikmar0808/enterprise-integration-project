@@ -22,9 +22,9 @@ Every command block below uses the placeholders in this table. Replace all occur
 | `<AWS_ACCOUNT_ID>` | `123456789012` | Run `aws sts get-caller-identity --query Account --output text` once any AWS credential is configured |
 | `<AWS_REGION>` | `ap-south-1` | The AWS region chosen for this deployment; must be used consistently in every command and Terraform file |
 | `<GITHUB_ORG>` | `octocat` | The GitHub username or organization that owns the repository, visible in its URL |
-| `<REPO_NAME>` | `enterprise-integration-project` | The repository name, visible in its URL |
+| `<REPO_NAME>` | `enterprise-integration-aws` | The repository name, visible in its URL. This repository is independent of any other cloud implementation of this project — if a differently-clouded implementation is also deployed under the same GitHub account, choose a distinct name for each (e.g. `enterprise-integration-aws` here, `enterprise-integration-azure` for an Azure implementation) to avoid a name collision |
 | `<TFC_ORG>` | `my-tfc-org` | The Terraform Cloud organization name, shown at the top of the Terraform Cloud web interface after sign-in |
-| `<TFC_WORKSPACE>` | `eai-project-infra` | A workspace name chosen when creating the Terraform Cloud workspace for this project |
+| `<TFC_WORKSPACE>` | `eai-aws-infra` | A workspace name chosen when creating the Terraform Cloud workspace for this project. If a differently-clouded implementation of this project shares the same Terraform Cloud organization, workspace names must still be unique within that organization — a cloud-specific name (as shown here) avoids a collision with, for example, an Azure implementation's own workspace(s) |
 | `<EC2_TAG_NAME>` | `eai-project-host` | A `Name` tag value chosen for the EC2 instance in Terraform; used to target deployment commands |
 | `<MFA_DEVICE_ARN>` | `arn:aws:iam::123456789012:mfa/terraform-admin` | Shown in the IAM console under the bootstrap user's Security Credentials, after an MFA device is registered |
 

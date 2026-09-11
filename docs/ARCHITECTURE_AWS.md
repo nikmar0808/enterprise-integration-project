@@ -11,6 +11,7 @@ This document explains why the system is built the way it is. It does not contai
 3. **IAM Identity Center is not used**, consistent with the constraint in Principle 2.
 4. **Free-tier eligibility is time-bound.** RDS and API Gateway free-tier allowances expire at the end of an account's 12-month window; resources dependent on this are flagged at their point of definition in `DEPLOYMENT.md`.
 5. **Every specification is grounded in the actual codebase** — exact file paths, property names, ports, and Terraform resource names are used rather than illustrative placeholders, except where a document is explicitly intended for reuse by a third party (see `DEPLOYMENT.md`'s placeholder convention).
+6. **This repository is a standalone, independently deployable implementation.** It assumes no shared Git repository, VS Code workspace, GitHub organization, Terraform Cloud organization, or resource-naming namespace with any other cloud implementation of this reference project. A person deploying this repository alongside a differently-clouded implementation of the same project is responsible for choosing distinct repository, workspace, and identity names between the two — this document does not assume that responsibility is handled for them.
 
 ---
 

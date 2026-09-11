@@ -2,7 +2,7 @@ terraform {
   cloud {
     organization = "MyOtg"
     workspaces {
-      name = "eai-project-infra"
+      name = "eai-aws-prod"
     }
   }
 
