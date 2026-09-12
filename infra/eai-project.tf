@@ -136,12 +136,17 @@ resource "aws_instance" "sandbox-1" {
   vpc_security_group_ids = [aws_security_group.app_sg.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
 
+  root_block_device {
+    volume_type = "gp3"
+    volume_size = 8
+  }
+
   user_data = <<-EOF
     #!/bin/bash
     dnf update -y
-    dnf install -y docker
-    systemctl enable docker
-    systemctl start docker
+    dnf install -y amazon-ssm-agent docker
+    systemctl enable --now amazon-ssm-agent
+    systemctl enable --now docker
     usermod -aG docker ec2-user
 
     curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
